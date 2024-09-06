@@ -1,0 +1,15 @@
+plotly
+plotly-express
+matplotlib
+scipy
+pandas
+numpy
+scikit-learn
+pyperclip
+pyarrow
+sas7bdat
+pyreadstat
+statsmodels
+pyod
+tensorflow
+h5py

@@ -1,6 +1,13 @@
-Change Log:
-===========
+Change Log
+==========
 
-0.0.1 (18/03/2023)
--------------------
-- First Release
+0.1.0 (2026-06-10)
+------------------
+- Refreshed README documentation to describe the current package scope.
+- Updated package metadata for the public M-Ana repository.
+- Documented data, analysis, modeling, time-series, statistics, A/B testing, and database modules.
+- Fixed the dependency list typo that merged `pymc` and `arviz`.
+
+0.0.1 (2023-03-18)
+------------------
+- First release.

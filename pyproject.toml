@@ -85,6 +85,7 @@ docs = [
   "mkdocs-material>=9",
   "mkdocstrings[python]>=0.25",
 ]
+test = ["sqlalchemy"]
 dev = [
   "build>=1.2",
   "mypy>=1.10,<2",

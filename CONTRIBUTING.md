@@ -9,7 +9,7 @@ Create an isolated environment, then install the package and development tools:
 ```bash
 python -m venv .venv
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,test]"
 ```
 
 Install only the optional feature groups needed for your change. For example:

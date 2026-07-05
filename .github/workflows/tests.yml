@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e .
+      - run: python -m pip install -e ".[test]"
       - run: python -m compileall -q MAna
       - run: python -m unittest discover -s tests -v
 
@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e ".[dev,test]"
       - run: ruff check MAna tests
       - run: mypy MAna/_version.py MAna/big MAna/recommend --follow-imports=skip
       - run: python -m build

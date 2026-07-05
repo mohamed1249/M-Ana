@@ -1,1 +1,14 @@
-global-include *.txt *.py
+include README.md
+include ROADMAP.md
+include CHANGELOG.txt
+include CONTRIBUTING.md
+include LICENSE
+include SECURITY.md
+include RELEASING.md
+include mkdocs.yml
+include pyproject.toml
+recursive-include docs *.md
+recursive-include MAna *.py
+recursive-include tests *.py
+global-exclude *.py[cod]
+global-exclude __pycache__

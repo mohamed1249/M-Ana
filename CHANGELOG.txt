@@ -1,12 +1,121 @@
 Change Log
 ==========
 
+1.0.0 (2026-07-04)
+------------------
+- Migrated all package metadata and optional dependencies to `pyproject.toml`.
+- Added a single package-version source, CI matrices, release and security
+  automation, code-quality configuration, documentation, and contribution guides.
+- Added real optional PySpark integration coverage while preserving no-Spark imports.
+- Removed stale build output, generated metadata, cache directories, old release
+  artifacts, the obsolete `MAna/Test` scaffold, and the two-cell legacy notebook.
+- Removed shadowed duplicate cleaning functions and standardized the MIT license name.
+
+0.9.0 (2026-07-02)
+------------------
+- Added the public `MAna.big` module with lazy optional PySpark imports.
+- Added Spark session configuration, schema-aware batch/table I/O, compute and
+  storage partition controls, safe joins, latest-row deduplication, and lineage.
+- Added schema, duplicate-key, null, partition, and execution-plan diagnostics.
+- Added mixed numeric/categorical Spark ML feature pipelines and reproducible
+  DataFrame splitting.
+- Added checkpointed Structured Streaming reader/writer helpers.
+- Added bounded local batching, chunked CSV, multi-file CSV, and threaded-I/O
+  helpers adapted from the reusable processing blocks.
+
+0.8.0 (2026-07-02)
+------------------
+- Added the public `MAna.recommend` module.
+- Added validated sparse interaction matrices, user histories, and leakage-safe
+  per-user temporal holdout splits.
+- Added popularity recommendations with Bayesian rating shrinkage and optional
+  time decay, content-profile recommendations, and sparse item-KNN filtering.
+- Added weighted-score and reciprocal-rank hybrid recommenders using MAna's
+  shared RAG ranking utilities.
+- Added per-user ranking evaluation, catalog coverage, intra-list diversity,
+  and an end-to-end recommender evaluator.
+
+0.7.0 (2026-07-01)
+------------------
+- Added citation-ready document ingestion records with deterministic chunk IDs.
+- Added a provider-neutral RAG pipeline with evidence deduplication, safe context
+  handling, bounded chat history, and normalized source references.
+- Added OpenAI and Azure OpenAI environment-based clients, chat completions, and
+  a batched embedding adapter compatible with MAna vector stores.
+- Added provider-neutral document tasks and ranked retrieval evaluation metrics.
+- Fixed cited-context rendering for Pinecone-style matches whose text is stored
+  inside metadata.
+
+0.6.0 (2026-07-01)
+------------------
+- Added descriptive, grouped, and frequency summaries to `MAna.stata`.
+- Added Pearson/Spearman/Kendall tests, partial correlation, correlation matrices,
+  and simple linear-regression diagnostics.
+- Added lightweight Bayesian proportion A/B comparison with Beta posteriors.
+- Added exact two-sample t-test power and sample-size calculations based on the
+  noncentral t distribution.
+
+0.5.1 (2026-06-30)
+------------------
+- Removed the duplicate `MAna.statistics` alias package.
+- Kept statistical tests, effect sizes, A/B testing, and experiment
+  visualizations under the single `MAna.stata` namespace.
+- Renamed the optional dependency extra from `statistics` to `stata`.
+
+0.5.0 (2026-06-30)
+------------------
+- Added SQLite schema initialization and `INSERT OR IGNORE` batch helpers.
+- Added named-parameter `execute_many` support on SQL connectors.
+- Added MongoDB URI connection with ping checks and preserved URI options.
+- Added atomic MongoDB document upsert helpers, including `save_document`.
+- Added an optional Pinecone vector-store adapter for index creation, batched
+  upserts, metadata-filtered search, and text search.
+- Updated the RAG optional dependency group to use the current `pinecone`
+  Python SDK package.
+
+0.4.0 (2026-06-28)
+------------------
+- Added leakage-safe grouped lag features for panel time series.
+- Added generalized periodic aggregation for grouped transactional data.
+- Added chronological split-before-scale results with fitted feature and target scalers.
+- Added periodogram spectra, dominant-period detection, and seasonal diagnostic plots.
+- Added `NeuralProphetForecaster` with the standard M-Ana fit/predict interface.
+- Reused the strongest historical time-series recipes while omitting duplicate ARIMA, LSTM, metric, decomposition, and ordinary feature wrappers.
+
+0.3.0 (2026-06-27)
+------------------
+- Added leakage-safe mixed text, numeric, and categorical classification pipelines.
+- Added segmented embeddings and a lazy Hugging Face/PyTorch classifier helper.
+- Added the `MAna.rag` public module and persistent semantic indexes.
+- Added stable content-derived IDs, metadata-aware search hits, and index persistence.
+- Added PDF page extraction and source-labeled grounded context/messages.
+- Added FAISS cosine helpers and retried vector-database batch writes.
+- Added weighted reciprocal-rank fusion for retrieval and recommender signals.
+- Added non-mutating, newest-first chat-history trimming.
+- Added lightweight tests using fake encoders and vector services.
+
+0.2.0 (2026-06-25)
+------------------
+- Added the `MAna.nlp` public module.
+- Added text cleaning, normalization, tokenization, and reusable cleaner workflows.
+- Added overlapping document chunking with source offsets and metadata.
+- Added TF-IDF, count, and hashing vectorizers with similarity helpers.
+- Added NMF and LDA topic modeling with document assignments.
+- Added built-in lexicon sentiment plus optional VADER and transformer backends.
+- Added TF-IDF and optional sentence-transformer embeddings with semantic search.
+- Added NLP behavior tests and kept transformer dependencies lazy and optional.
+
 0.1.0 (2026-06-10)
 ------------------
 - Refreshed README documentation to describe the current package scope.
 - Updated package metadata for the public M-Ana repository.
 - Documented data, analysis, modeling, time-series, statistics, A/B testing, and database modules.
 - Fixed the dependency list typo that merged `pymc` and `arviz`.
+- Made Stata statistical utilities, Database, and Time Series public APIs installable and consistent.
+- Added MongoDB DataFrame helpers and repaired SQLite/query-builder workflows.
+- Exposed hybrid forecasting, ensemble anomaly detection, and other implemented time-series APIs.
+- Split heavy feature dependencies into optional installation groups.
+- Added smoke tests and the project roadmap.
 
 0.0.1 (2023-03-18)
 ------------------

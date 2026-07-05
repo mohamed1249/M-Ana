@@ -1,0 +1,32 @@
+site_name: M-Ana
+site_description: Practical helpers for repeatable data-science workflows
+repo_url: https://github.com/mohamed1249/M-Ana
+repo_name: mohamed1249/M-Ana
+
+theme:
+  name: material
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+
+nav:
+  - Home: index.md
+  - Quick start: quickstart.md
+  - API: api.md
+  - Tutorials:
+      - RAG: tutorials/rag.md
+      - Recommenders: tutorials/recommenders.md
+      - Spark: tutorials/spark.md
+  - Versioning: versioning.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.highlight
+  - pymdownx.superfences

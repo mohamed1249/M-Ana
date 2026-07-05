@@ -1,0 +1,171 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "M_Ana_package"
+dynamic = ["version"]
+description = "A practical data-science toolkit for analysis, NLP, RAG, recommenders, statistics, time series, databases, and Spark."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Muhammad Abdulsalam", email = "mohameedmtmn@gmail.com" },
+]
+keywords = [
+  "data science",
+  "machine learning",
+  "natural language processing",
+  "retrieval augmented generation",
+  "recommender systems",
+  "statistics",
+  "time series",
+  "databases",
+  "pyspark",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+  "joblib",
+  "matplotlib",
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "scipy",
+]
+
+[project.optional-dependencies]
+visualization = ["plotly", "seaborn"]
+io = [
+  "beautifulsoup4",
+  "openpyxl",
+  "pandas-sas",
+  "pillow",
+  "pyarrow",
+  "pyperclip",
+  "pyreadstat",
+  "requests",
+  "sas7bdat",
+]
+stata = ["arviz", "pingouin", "pymc", "seaborn", "statsmodels"]
+database = [
+  "pymongo",
+  "pymysql",
+  "psycopg2-binary",
+  "python-dotenv",
+  "sqlalchemy",
+  "tqdm",
+]
+timeseries = [
+  "neuralprophet",
+  "pmdarima",
+  "prophet",
+  "seaborn",
+  "statsmodels",
+  "xgboost",
+]
+modeling = ["h5py", "pyod", "tensorflow", "torch"]
+nlp = ["sentence-transformers", "transformers", "vaderSentiment"]
+rag = ["faiss-cpu", "openai", "pinecone", "pypdf", "sentence-transformers"]
+big = ["pyspark>=3.5"]
+docs = [
+  "mkdocs>=1.5",
+  "mkdocs-material>=9",
+  "mkdocstrings[python]>=0.25",
+]
+dev = [
+  "build>=1.2",
+  "mypy>=1.10,<2",
+  "pip-audit>=2.7",
+  "pre-commit>=3.5",
+  "ruff>=0.6",
+  "twine>=5",
+]
+all = [
+  "arviz",
+  "beautifulsoup4",
+  "faiss-cpu",
+  "h5py",
+  "neuralprophet",
+  "openai",
+  "openpyxl",
+  "pandas-sas",
+  "pillow",
+  "pinecone",
+  "plotly",
+  "pmdarima",
+  "prophet",
+  "psycopg2-binary",
+  "pyarrow",
+  "pymc",
+  "pymongo",
+  "pymysql",
+  "pyod",
+  "pyperclip",
+  "pypdf",
+  "pyreadstat",
+  "pyspark>=3.5",
+  "python-dotenv",
+  "requests",
+  "sas7bdat",
+  "seaborn",
+  "sentence-transformers",
+  "sqlalchemy",
+  "statsmodels",
+  "tensorflow",
+  "torch",
+  "tqdm",
+  "transformers",
+  "vaderSentiment",
+  "xgboost",
+]
+
+[project.urls]
+Homepage = "https://github.com/mohamed1249/M-Ana"
+Documentation = "https://github.com/mohamed1249/M-Ana#readme"
+Issues = "https://github.com/mohamed1249/M-Ana/issues"
+Source = "https://github.com/mohamed1249/M-Ana"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["MAna*"]
+exclude = ["MAna.Test*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "MAna._version.__version__" }
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+extend-exclude = ["build", "dist"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["F403", "F405"]
+
+[tool.ruff.lint.per-file-ignores]
+"MAna/**/__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.9"
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = false
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["build", "dist", "tests"]

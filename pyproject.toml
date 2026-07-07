@@ -82,7 +82,7 @@ rag = ["faiss-cpu", "openai", "pinecone", "pypdf", "sentence-transformers"]
 big = ["pyspark>=3.5"]
 docs = [
   "mkdocs>=1.5",
-  "mkdocs-material>=9",
+  "mkdocs-material>=9.7.6",
   "mkdocstrings[python]>=0.25",
 ]
 test = ["seaborn", "sqlalchemy", "statsmodels"]

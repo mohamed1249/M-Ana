@@ -1018,6 +1018,8 @@ def plot_residuals(
     ---------
     >>> plot_residuals(y_true, y_pred)
     """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
     residuals = y_true - y_pred
 
     fig, axes = plt.subplots(1, 3, figsize=figsize)
@@ -2299,9 +2301,9 @@ def loss_plot(
 
     # Print best values
     if 'loss' in history_df.columns:
-        print(f"✓ Minimum loss: {history_df['loss'].min():.6f} at epoch {history_df['loss'].idxmin() + 1}")
+        print(f"[OK] Minimum loss: {history_df['loss'].min():.6f} at epoch {history_df['loss'].idxmin() + 1}")
     if 'val_loss' in history_df.columns:
-        print(f"✓ Minimum validation loss: {history_df['val_loss'].min():.6f} at epoch {history_df['val_loss'].idxmin() + 1}")
+        print(f"[OK] Minimum validation loss: {history_df['val_loss'].min():.6f} at epoch {history_df['val_loss'].idxmin() + 1}")
 
     # Determine number of subplots
     unique_metrics = set()

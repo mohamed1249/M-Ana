@@ -79,14 +79,14 @@ class EvaluationReport:
     def summary(self) -> str:
         """Generate human-readable summary."""
         summary = f"""
-╔══════════════════════════════════════════════════════════════╗
-║           MODEL EVALUATION REPORT                            ║
-╚══════════════════════════════════════════════════════════════╝
+==============================================================
+MODEL EVALUATION REPORT
+==============================================================
 
-📊 MODEL TYPE: {self.model_type.upper()}
-🎯 TASK: {self.task_type}
+MODEL TYPE: {self.model_type.upper()}
+TASK: {self.task_type}
 
-📈 KEY METRICS
+KEY METRICS
 """
         for metric, value in self.metrics.items():
             if isinstance(value, float):
@@ -738,7 +738,7 @@ def cross_validate_model(
                 metric_clean = metric_name.replace('_scores', '')
                 axes[idx].boxplot([scores], labels=[metric_clean])
                 axes[idx].scatter([1]*len(scores), scores, alpha=0.5, s=50)
-                axes[idx].set_title(f'{metric_clean.upper()}\nMean: {np.mean(scores):.4f} ± {np.std(scores):.4f}')
+                axes[idx].set_title(f'{metric_clean.upper()}\nMean: {np.mean(scores):.4f} +/- {np.std(scores):.4f}')
                 axes[idx].set_ylabel('Score')
                 axes[idx].grid(alpha=0.3, axis='y')
 
@@ -820,7 +820,9 @@ def plot_feature_importance(
     plt.gca().invert_yaxis()
     plt.grid(alpha=0.3, axis='x')
     plt.tight_layout()
-    plt.show()
+    backend = plt.get_backend().lower()
+    if "agg" not in backend or "inline" in backend:
+        plt.show()
 
     return importance_df
 

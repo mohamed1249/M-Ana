@@ -1,10 +1,12 @@
 # M-Ana
 
-M-Ana is a personal Python data-science toolkit for data loading, cleaning, analysis, visualization, NLP, retrieval-augmented generation, recommender systems, big-data processing, modeling, time-series work, statistical testing, A/B testing, and database workflows.
+M-Ana is a personal Python data-science toolkit for data loading, cleaning, analysis, visualization, NLP, retrieval-augmented generation, recommender systems, modeling, time-series work, statistical testing, A/B testing, and database workflows.
 
 The project started as a small collection of helper functions I kept rewriting in notebooks. It has grown into a stable package that collects reusable tools for the repeated parts of data science work: preparing data, exploring it, testing ideas, training models, evaluating results, and saving useful outputs.
 
-> Status: stable 1.x. Public APIs follow semantic versioning and compatibility changes are documented.
+> Status: MAna 2.x is a personal, Beta-stage toolkit with semantic versioning,
+> automated tests, package builds, and documented compatibility changes. Validate
+> its behavior against your own data and operational requirements before production use.
 
 ## What It Includes
 
@@ -14,6 +16,7 @@ Utilities for loading and cleaning data.
 
 - Read CSV, Excel, SAS, Stata, JSON, Parquet, HTML tables, images, and database query results.
 - Drop or fill missing values.
+- Chain column renaming, required-row filtering, numeric coercion, duplicate removal, and date parsing with `DataCleaner`.
 - Remove outliers with z-score, IQR, Isolation Forest, Local Outlier Factor, MAD, DBSCAN, and percentile methods.
 - Clean data-entry errors and validate expected values.
 - Generate cleaning reports and reusable cleaning workflows.
@@ -78,18 +81,6 @@ Reusable recommendation models with a common ranked DataFrame contract.
 - Weighted-score and reciprocal-rank hybrid recommenders.
 - Precision, recall, hit rate, MRR, MAP, NDCG, catalog coverage, and diversity.
 
-### Big-Data Processing
-
-Local bounded-memory helpers plus optional PySpark workflow utilities.
-
-- Spark session creation that respects cluster launchers and supports local mode.
-- Schema-aware file/table readers and partition-aware writers.
-- Safe joins, deterministic latest-row deduplication, casting, lineage, and unions.
-- Schema, duplicate-key, null, partition, and execution-plan diagnostics.
-- Mixed numeric/categorical Spark ML feature pipelines.
-- Checkpointed Structured Streaming readers and writers.
-- Pandas CSV chunking, multi-file ingestion, bounded batching, and threaded I/O.
-
 ### Time Series
 
 Tools for forecasting, anomaly detection, decomposition, feature engineering, and evaluation.
@@ -115,12 +106,17 @@ Statistical utilities for experiments and inference.
 
 ### Database
 
-Database helpers for analysis workflows.
+PostgreSQL-first database helpers for analysis workflows.
 
 - SQL read/write helpers.
 - Query builder utilities.
 - Connectors for PostgreSQL, MySQL, SQLite, and MongoDB-style workflows.
-- Bulk insert, upsert, datatype optimization, table inspection, and index helpers.
+- Secure PostgreSQL URLs from standard environment variables.
+- Batched PostgreSQL upserts with schema, constraint, and `DO NOTHING` support.
+- Fast DataFrame transfers through PostgreSQL `COPY`.
+- PostgreSQL schema, table-size, index, constraint, and query-plan inspection.
+- DataFrame-to-PostgreSQL DDL, index creation, table-health, and slow-query helpers.
+- Bulk insert, datatype optimization, table inspection, and index helpers.
 - SQLite schema initialization and `INSERT OR IGNORE` helpers for small local stores.
 - MongoDB URI connection helpers and atomic document upserts.
 
@@ -137,25 +133,25 @@ pip install -e .
 From a built wheel in `dist/`:
 
 ```bash
-pip install dist/m_ana_package-1.0.0-py3-none-any.whl
+pip install dist/m_ana_package-2.0.0-py3-none-any.whl
 ```
 
-From the GitHub v1.0.0 release:
+From the GitHub v2.0.0 release:
 
 ```bash
-pip install "https://github.com/mohamed1249/M-Ana/releases/download/v1.0.0/m_ana_package-1.0.0-py3-none-any.whl"
+pip install "https://github.com/mohamed1249/M-Ana/releases/download/v2.0.0/m_ana_package-2.0.0-py3-none-any.whl"
 ```
 
 Or install the tagged source directly (requires Git):
 
 ```bash
-pip install "M_Ana_package @ git+https://github.com/mohamed1249/M-Ana.git@v1.0.0"
+pip install "M_Ana_package @ git+https://github.com/mohamed1249/M-Ana.git@v2.0.0"
 ```
 
 Install optional feature groups as needed:
 
 ```bash
-pip install -e ".[stata,database,timeseries,big]"
+pip install -e ".[stata,database,timeseries]"
 pip install -e ".[nlp,rag,modeling,visualization]"
 pip install -e ".[all]"
 ```
@@ -289,6 +285,32 @@ comparison = bayesian_proportion_ab_test(
 print(comparison["probability_b_better"])
 
 sample_size = required_sample_size_two_sample(effect_size=0.30, power=0.80)
+```
+
+### Work with PostgreSQL
+
+```python
+from MAna.database import (
+    connect_postgres,
+    copy_from_dataframe,
+    explain_postgres,
+    upsert,
+)
+
+# Reads PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, and PGSSLMODE.
+db = connect_postgres()
+
+upsert(
+    features,
+    "customer_features",
+    db,
+    key_columns="customer_id",
+    schema="analytics",
+    batch_size=5_000,
+)
+
+copy_from_dataframe(events, "events", db, schema="analytics")
+plan = explain_postgres("SELECT * FROM analytics.events WHERE event_id = 42", db)
 ```
 
 ### Initialize SQLite and Save MongoDB Documents
@@ -470,44 +492,11 @@ metrics = evaluate_recommender(
 )
 ```
 
-### Process Data with Spark
-
-```python
-from MAna.big import (
-    dataframe_summary,
-    read_spark_data,
-    snake_case_columns,
-    spark_session,
-    write_spark_data,
-)
-
-with spark_session("MAna ETL", master="local[*]") as spark:
-    events = read_spark_data(
-        spark,
-        "events/*.json",
-        format="json",
-        schema="user_id STRING, event_time TIMESTAMP, amount DOUBLE",
-    )
-    events = snake_case_columns(events)
-    events = events.withColumn("event_date", events["event_time"].cast("date"))
-    print(dataframe_summary(events))
-
-    write_spark_data(
-        events,
-        "warehouse/events",
-        format="parquet",
-        mode="overwrite",
-        partition_by=["event_date"],
-        num_partitions=8,
-    )
-```
-
 ## Package Structure
 
 ```text
 MAna/
   analysis/      Visualization and dashboard helpers
-  big/           Local batching and optional Spark workflows
   data/          Data loading, cleaning, validation, and preprocessing
   database/      Database connectors, SQL helpers, and query builders
   modeling/      Model training, evaluation, persistence, and visualization
@@ -522,7 +511,6 @@ MAna/
 
 - More RAG reranking and vector database integrations.
 - Matrix-factorization, session-based, and online-learning recommenders.
-- Spark connectors, lakehouse formats, and richer streaming diagnostics.
 - Complete documentation pages and more examples.
 
 ## License

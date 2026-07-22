@@ -52,6 +52,17 @@ class VectorizationTests(unittest.TestCase):
         )
         self.assertEqual(result.shape, (2, 32))
 
+    def test_hashing_vectorizer_accepts_explicit_alternate_sign(self):
+        from MAna.nlp import TextVectorizer
+
+        result = TextVectorizer(
+            method="hashing",
+            n_features=16,
+            alternate_sign=False,
+        ).fit_transform(["alpha beta", "beta gamma"])
+
+        self.assertEqual(result.shape, (2, 16))
+
 
 class AnalysisTests(unittest.TestCase):
     def test_sentiment_handles_positive_and_negated_language(self):

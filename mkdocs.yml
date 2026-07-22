@@ -20,10 +20,17 @@ nav:
   - Quick start: quickstart.md
   - API: api.md
   - Tutorials:
+      - Data module notebook: tutorials/data.md
+      - Modeling module notebook: tutorials/modeling.md
+      - Analysis module notebook: tutorials/analysis.md
+      - Statistics module notebook: tutorials/statistics.md
+      - Time series module notebook: tutorials/time_series.md
+      - Database and PostgreSQL: tutorials/database.md
+      - NLP module notebook: tutorials/nlp.md
       - RAG: tutorials/rag.md
       - Recommenders: tutorials/recommenders.md
-      - Spark: tutorials/spark.md
   - Versioning: versioning.md
+  - MAna 2.0.0 announcement kit: releases/2.0.0-linkedin-kit.md
 
 markdown_extensions:
   - admonition

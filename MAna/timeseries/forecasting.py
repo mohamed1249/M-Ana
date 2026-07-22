@@ -1217,18 +1217,21 @@ class LSTMForecaster(BaseForecaster):
         X = self.torch.FloatTensor(X).unsqueeze(-1).to(self.device)
         y = self.torch.FloatTensor(y).to(self.device)
 
-        # Build model
-        class LSTMModel(self.nn.Module):
+        # Build model. Capture the outer torch.nn module before defining the
+        # nested class so the inner Module instance does not shadow it.
+        nn_module = self.nn
+
+        class LSTMModel(nn_module.Module):
             def __init__(self, input_size, hidden_size, num_layers, dropout):
                 super().__init__()
-                self.lstm = self.nn.LSTM(
+                self.lstm = nn_module.LSTM(
                     input_size,
                     hidden_size,
                     num_layers,
                     batch_first=True,
                     dropout=dropout if num_layers > 1 else 0
                 )
-                self.linear = self.nn.Linear(hidden_size, 1)
+                self.linear = nn_module.Linear(hidden_size, 1)
 
             def forward(self, x):
                 lstm_out, _ = self.lstm(x)
@@ -1246,7 +1249,7 @@ class LSTMForecaster(BaseForecaster):
         criterion = self.nn.MSELoss()
         optimizer = self.torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
-        print(f"⏳ Training LSTM model on {self.device}...")
+        print(f"[INFO] Training LSTM model on {self.device}...")
 
         self.model.train()
         for epoch in range(self.epochs):
@@ -1260,7 +1263,7 @@ class LSTMForecaster(BaseForecaster):
                 print(f"  Epoch {epoch+1}/{self.epochs}, Loss: {loss.item():.6f}")
 
         self.is_fitted = True
-        print("✓ LSTM model trained successfully")
+        print("[OK] LSTM model trained successfully")
 
         return self
 
@@ -1399,6 +1402,17 @@ class EnsembleForecaster(BaseForecaster):
 
         if not self.is_fitted:
             warnings.warn("Some models are not fitted yet")
+
+    def fit(self, data: Optional[Union[pd.Series, pd.DataFrame]] = None) -> 'EnsembleForecaster':
+        """Fit any unfitted child models, or validate that all are already fitted."""
+        unfitted = [model for model in self.models if not model.is_fitted]
+        if unfitted:
+            if data is None:
+                raise ValueError("Provide data to fit unfitted ensemble members")
+            for model in unfitted:
+                model.fit(data)
+        self.is_fitted = all(model.is_fitted for model in self.models)
+        return self
 
     def predict(self, steps: int) -> pd.Series:
         """Generate ensemble forecast."""
@@ -1786,7 +1800,11 @@ class HybridXGBLinearForecaster(BaseForecaster):
                     next_date = last_date + pd.Timedelta(days=1)
 
             # Append prediction to data
-            new_point = pd.Series([hybrid_pred], index=[next_date])
+            new_point = pd.Series(
+                [hybrid_pred],
+                index=[next_date],
+                name=current_data.name,
+            )
             current_data = pd.concat([current_data, new_point])
 
         # Create forecast index

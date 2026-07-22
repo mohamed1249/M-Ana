@@ -88,6 +88,9 @@ class TextVectorizer:
     def _create_vectorizer(self):
         kwargs = dict(self.kwargs)
         n_features = kwargs.pop("n_features", self.max_features or 2**18)
+        alternate_sign = False
+        if self.method == "hashing":
+            alternate_sign = kwargs.pop("alternate_sign", False)
         common: Dict[str, Any] = {
             "ngram_range": self.ngram_range,
             "stop_words": self.stop_words,
@@ -110,7 +113,7 @@ class TextVectorizer:
         if self.method == "hashing":
             return HashingVectorizer(
                 n_features=n_features,
-                alternate_sign=False,
+                alternate_sign=alternate_sign,
                 **common,
             )
         raise ValueError("method must be 'tfidf', 'count', or 'hashing'")

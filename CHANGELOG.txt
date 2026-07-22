@@ -1,27 +1,34 @@
 Change Log
 ==========
 
+2.0.0 (2026-07-22)
+------------------
+- Removed the optional `MAna.big`/PySpark namespace and its Spark-specific CI
+  job. This is the breaking change that makes this a major-version release.
+- Made PostgreSQL a first-class database workflow with environment-based URLs,
+  schema-aware batch upserts, psycopg2 `COPY`, catalog and query-plan inspection,
+  DataFrame-to-DDL generation, safe index creation, and maintenance diagnostics.
+- Reworked the database documentation around production PostgreSQL workflows
+  while retaining SQLite as the portable notebook and local-store fallback.
+- Added chainable `DataCleaner` helpers for metadata-aware column renaming,
+  required-row filtering, numeric coercion, and configurable date parsing.
+- Refactored every module notebook to use `MAna.data` for reusable dataset
+  loading and structural preprocessing, and repaired root/notebook path handling.
+- Added connected module notebooks and focused workflow tests across data,
+  analysis, modeling, NLP, RAG, recommenders, statistics, time series, and databases.
+- Consolidated duplicated notebook datasets and excluded generated notebook logs
+  and local database files from version control.
+- Kept PyTorch optional so importing ordinary modeling workflows does not require
+  the heavy modeling extra, and added compatibility for current Pandas offsets.
+
 1.0.0 (2026-07-04)
 ------------------
 - Migrated all package metadata and optional dependencies to `pyproject.toml`.
 - Added a single package-version source, CI matrices, release and security
   automation, code-quality configuration, documentation, and contribution guides.
-- Added real optional PySpark integration coverage while preserving no-Spark imports.
 - Removed stale build output, generated metadata, cache directories, old release
   artifacts, the obsolete `MAna/Test` scaffold, and the two-cell legacy notebook.
 - Removed shadowed duplicate cleaning functions and standardized the MIT license name.
-
-0.9.0 (2026-07-02)
-------------------
-- Added the public `MAna.big` module with lazy optional PySpark imports.
-- Added Spark session configuration, schema-aware batch/table I/O, compute and
-  storage partition controls, safe joins, latest-row deduplication, and lineage.
-- Added schema, duplicate-key, null, partition, and execution-plan diagnostics.
-- Added mixed numeric/categorical Spark ML feature pipelines and reproducible
-  DataFrame splitting.
-- Added checkpointed Structured Streaming reader/writer helpers.
-- Added bounded local batching, chunked CSV, multi-file CSV, and threaded-I/O
-  helpers adapted from the reusable processing blocks.
 
 0.8.0 (2026-07-02)
 ------------------

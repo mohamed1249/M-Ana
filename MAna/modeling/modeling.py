@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib.util
 
 import numpy as np
@@ -9,10 +11,29 @@ from pathlib import Path
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader, TensorDataset
+except ImportError:  # PyTorch is an optional modeling dependency.
+    torch = None
+    nn = None
+    optim = None
+    DataLoader = Any
+    TensorDataset = None
+
+
+def _require_pytorch() -> None:
+    """Raise an actionable error when a PyTorch-only helper is requested."""
+    if torch is None or nn is None or optim is None or TensorDataset is None:
+        raise ImportError(
+            "PyTorch helpers require the optional modeling dependencies. "
+            "Install them with `pip install M_Ana_package[modeling]`."
+        )
+
+
+_TorchModuleBase = nn.Module if nn is not None else object
 
 
 # ==================== MODEL REGISTRY & VERSIONING ====================
@@ -210,7 +231,8 @@ class ModelRegistry:
 
         self._save_registry()
 
-        print(f"✓ Model saved: {model_name} v{version}")
+        version_label = str(version) if str(version).lower().startswith("v") else f"v{version}"
+        print(f"[OK] Model saved: {model_name} {version_label}")
         print(f"  Path: {model_path}")
         print(f"  Framework: {framework}")
         if metrics:
@@ -271,7 +293,8 @@ class ModelRegistry:
             # Load sklearn-compatible model
             model = joblib.load(model_path + '.pkl')
 
-        print(f"✓ Model loaded: {model_name} v{version}")
+        version_label = str(version) if str(version).lower().startswith("v") else f"v{version}"
+        print(f"[OK] Model loaded: {model_name} {version_label}")
         print(f"  Framework: {framework}")
         if metadata.get('metrics'):
             print(f"  Metrics: {metadata['metrics']}")
@@ -379,7 +402,8 @@ class ModelRegistry:
                 del self.registry[model_name]
 
             self._save_registry()
-            print(f"✓ Deleted: {model_name} v{version}")
+            version_label = str(version) if str(version).lower().startswith("v") else f"v{version}"
+            print(f"[OK] Deleted: {model_name} {version_label}")
         else:
             print(f"Model {model_name} v{version} not found")
 
@@ -622,16 +646,16 @@ def save_keras_model(
     if save_format == 'tf':
         # TensorFlow SavedModel format (recommended)
         model.save(model_name)
-        print(f"✓ Saved model to {model_name}/ (TensorFlow SavedModel format)")
+        print(f"[OK] Saved model to {model_name}/ (TensorFlow SavedModel format)")
 
     elif save_format == 'h5':
         # HDF5 format
         if save_weights_only:
             model.save_weights(f"{model_name}.h5")
-            print(f"✓ Saved weights to {model_name}.h5")
+            print(f"[OK] Saved weights to {model_name}.h5")
         else:
             model.save(f"{model_name}.h5")
-            print(f"✓ Saved model to {model_name}.h5")
+            print(f"[OK] Saved model to {model_name}.h5")
 
     elif save_format == 'json':
         # JSON + weights
@@ -639,8 +663,8 @@ def save_keras_model(
         with open(f"{model_name}.json", "w") as json_file:
             json_file.write(model_json)
         model.save_weights(f"{model_name}_weights.h5")
-        print(f"✓ Saved architecture to {model_name}.json")
-        print(f"✓ Saved weights to {model_name}_weights.h5")
+        print(f"[OK] Saved architecture to {model_name}.json")
+        print(f"[OK] Saved weights to {model_name}_weights.h5")
 
     else:
         raise ValueError(f"Unsupported format: {save_format}")
@@ -698,7 +722,7 @@ def load_keras_model(
             model_name if load_format == 'tf' else f"{model_name}.h5",
             custom_objects=custom_objects
         )
-        print(f"✓ Loaded model from {model_name}")
+        print(f"[OK] Loaded model from {model_name}")
 
     elif load_format == 'json':
         # Load from JSON
@@ -706,7 +730,7 @@ def load_keras_model(
             loaded_model_json = json_file.read()
         model = model_from_json(loaded_model_json, custom_objects=custom_objects)
         model.load_weights(f"{model_name}_weights.h5")
-        print(f"✓ Loaded model from {model_name}.json")
+        print(f"[OK] Loaded model from {model_name}.json")
 
     else:
         raise ValueError(f"Unsupported format: {load_format}")
@@ -740,7 +764,7 @@ def save_sklearn_model(
     >>> save_sklearn_model(model, 'rf_model')
     """
     joblib.dump(model, f"{filename}.pkl", compress=compress)
-    print(f"✓ Saved model to {filename}.pkl")
+    print(f"[OK] Saved model to {filename}.pkl")
 
 
 def load_sklearn_model(filename: str):
@@ -761,7 +785,7 @@ def load_sklearn_model(filename: str):
         filename += '.pkl'
 
     model = joblib.load(filename)
-    print(f"✓ Loaded model from {filename}")
+    print(f"[OK] Loaded model from {filename}")
     return model
 
 
@@ -824,6 +848,7 @@ def auto_classifier(
     from sklearn.svm import SVC
     from sklearn.naive_bayes import GaussianNB
     from sklearn.neighbors import KNeighborsClassifier
+    from xgboost import XGBClassifier
     from sklearn.model_selection import cross_val_score
     from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
@@ -834,7 +859,8 @@ def auto_classifier(
         'Gradient Boosting': GradientBoostingClassifier(n_estimators=100, random_state=42),
         'SVM': SVC(probability=True, random_state=42),
         'Naive Bayes': GaussianNB(),
-        'K-Nearest Neighbors': KNeighborsClassifier(n_jobs=n_jobs)
+        'K-Nearest Neighbors': KNeighborsClassifier(n_jobs=n_jobs),
+        'XGBoost': XGBClassifier(n_estimators=100, eval_metric='logloss', random_state=42, n_jobs=n_jobs)
     }
 
     results = {}
@@ -847,7 +873,7 @@ def auto_classifier(
     for name, model in models.items():
         if time.time() - start_time > time_limit:
             if verbose:
-                print("⏱️  Time limit reached")
+                print("[WARN] Time limit reached")
             break
 
         if verbose:
@@ -886,7 +912,7 @@ def auto_classifier(
             }
 
             if verbose:
-                print(f"  CV: {cv_mean:.4f} ± {cv_std:.4f} | Test: {test_score:.4f}")
+                print(f"  CV: {cv_mean:.4f} +/- {cv_std:.4f} | Test: {test_score:.4f}")
 
             # Track best model
             if test_score > best_score:
@@ -896,11 +922,11 @@ def auto_classifier(
 
         except Exception as e:
             if verbose:
-                print(f"  ❌ Failed: {e}")
+                print(f"  [FAILED] {e}")
             continue
 
     if verbose:
-        print(f"\\n🏆 Best Model: {best_model_name}")
+        print(f"\\n[OK] Best Model: {best_model_name}")
         print(f"   Score: {best_score:.4f}")
 
     return best_model, {
@@ -951,6 +977,7 @@ def auto_regressor(
     from sklearn.linear_model import LinearRegression, Ridge, Lasso
     from sklearn.svm import SVR
     from sklearn.neighbors import KNeighborsRegressor
+    from xgboost import XGBRegressor
     from sklearn.model_selection import cross_val_score
     from sklearn.metrics import r2_score, mean_squared_error
 
@@ -961,7 +988,8 @@ def auto_regressor(
         'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=n_jobs),
         'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, random_state=42),
         'SVR': SVR(),
-        'K-Nearest Neighbors': KNeighborsRegressor(n_jobs=n_jobs)
+        'K-Nearest Neighbors': KNeighborsRegressor(n_jobs=n_jobs),
+        'XGBoost': XGBRegressor(n_estimators=100, random_state=42, n_jobs=n_jobs)
     }
 
     results = {}
@@ -974,7 +1002,7 @@ def auto_regressor(
     for name, model in models.items():
         if time.time() - start_time > time_limit:
             if verbose:
-                print("⏱️  Time limit reached")
+                print("[WARN] Time limit reached")
             break
 
         if verbose:
@@ -1008,7 +1036,7 @@ def auto_regressor(
             }
 
             if verbose:
-                print(f"  CV: {cv_mean:.4f} ± {cv_std:.4f} | Test: {test_score:.4f}")
+                print(f"  CV: {cv_mean:.4f} +/- {cv_std:.4f} | Test: {test_score:.4f}")
 
             if test_score > best_score:
                 best_score = test_score
@@ -1017,11 +1045,11 @@ def auto_regressor(
 
         except Exception as e:
             if verbose:
-                print(f"  ❌ Failed: {e}")
+                print(f"  [FAILED] {e}")
             continue
 
     if verbose:
-        print(f"\\n🏆 Best Model: {best_model_name}")
+        print(f"\\n[OK] Best Model: {best_model_name}")
         print(f"   Score: {best_score:.4f}")
 
     return best_model, {
@@ -1112,7 +1140,7 @@ def hyperparameter_search(
     print(f"Starting {search_type} search...")
     search.fit(X, y)
 
-    print("\\n✓ Search complete!")
+    print("\n[OK] Search complete!")
     print(f"  Best score: {search.best_score_:.4f}")
     print(f"  Best params: {search.best_params_}")
 
@@ -1174,7 +1202,7 @@ def export_model_for_production(
                 with open(f"{model_name}.onnx", "wb") as f:
                     f.write(onnx_model.SerializeToString())
 
-                print(f"✓ Exported to {model_name}.onnx")
+                print(f"[OK] Exported to {model_name}.onnx")
 
             elif framework == 'tensorflow':
                 if importlib.util.find_spec("tf2onnx") is None:
@@ -1183,7 +1211,7 @@ def export_model_for_production(
                 print("TensorFlow to ONNX export requires additional setup")
 
         except ImportError as e:
-            print(f"❌ ONNX export requires additional packages: {e}")
+            print(f"[FAILED] ONNX export requires additional packages: {e}")
 
     elif export_format == 'tflite':
         if framework == 'tensorflow':
@@ -1194,7 +1222,7 @@ def export_model_for_production(
             with open(f"{model_name}.tflite", 'wb') as f:
                 f.write(tflite_model)
 
-            print(f"✓ Exported to {model_name}.tflite")
+            print(f"[OK] Exported to {model_name}.tflite")
         else:
             print("TFLite export only works with TensorFlow models")
 
@@ -1414,6 +1442,7 @@ class PyTorchTrainer:
         metrics : dict, optional
             Additional metrics {'name': metric_function}.
         """
+        _require_pytorch()
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
@@ -1451,7 +1480,7 @@ class PyTorchTrainer:
         self.epochs_without_improvement = 0
         self.history = PyTorchTrainingHistory()
 
-        print("✓ Trainer initialized")
+        print("[OK] Trainer initialized")
         print(f"  Device: {self.device}")
         print(f"  Mixed Precision: {mixed_precision}")
         print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -1639,7 +1668,7 @@ class PyTorchTrainer:
                         self.best_val_loss = val_loss
                         self.save_checkpoint(epoch, is_best=True)
                         if verbose:
-                            print(f"  ✓ Saved best model (val_loss: {val_loss:.4f})")
+                            print(f"  [OK] Saved best model (val_loss: {val_loss:.4f})")
                 else:
                     self.save_checkpoint(epoch, is_best=False)
 
@@ -1694,7 +1723,7 @@ class PyTorchTrainer:
 
         self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
 
-        print(f"✓ Loaded checkpoint from {checkpoint_path}")
+        print(f"[OK] Loaded checkpoint from {checkpoint_path}")
         print(f"  Epoch: {checkpoint['epoch']}")
         print(f"  Best Val Loss: {self.best_val_loss:.4f}")
 
@@ -1756,6 +1785,7 @@ def save_pytorch_model(
     >>> # Save as TorchScript
     >>> save_pytorch_model(model, 'my_model', save_format='scripted')
     """
+    _require_pytorch()
     if save_format == 'state_dict':
         # Save state dict (recommended - most flexible)
         checkpoint = {
@@ -1771,18 +1801,18 @@ def save_pytorch_model(
             checkpoint['metrics'] = metrics
 
         torch.save(checkpoint, f"{model_name}.pt")
-        print(f"✓ Saved model state dict to {model_name}.pt")
+        print(f"[OK] Saved model state dict to {model_name}.pt")
 
     elif save_format == 'full_model':
         # Save entire model
         torch.save(model, f"{model_name}_full.pt")
-        print(f"✓ Saved full model to {model_name}_full.pt")
+        print(f"[OK] Saved full model to {model_name}_full.pt")
 
     elif save_format == 'scripted':
         # Save as TorchScript (for production)
         scripted_model = torch.jit.script(model)
         scripted_model.save(f"{model_name}_scripted.pt")
-        print(f"✓ Saved TorchScript model to {model_name}_scripted.pt")
+        print(f"[OK] Saved TorchScript model to {model_name}_scripted.pt")
 
     else:
         raise ValueError(f"Unknown save_format: {save_format}")
@@ -1839,6 +1869,7 @@ def load_pytorch_model(
     ...     load_format='scripted'
     ... )
     """
+    _require_pytorch()
     device = torch.device(device)
 
     if load_format == 'state_dict':
@@ -1855,7 +1886,7 @@ def load_pytorch_model(
         model.to(device)
         model.eval()
 
-        print(f"✓ Loaded model from {model_name}.pt")
+        print(f"[OK] Loaded model from {model_name}.pt")
         if 'epoch' in checkpoint:
             print(f"  Epoch: {checkpoint['epoch']}")
         if 'metrics' in checkpoint:
@@ -1867,14 +1898,14 @@ def load_pytorch_model(
         model = torch.load(f"{model_name}_full.pt", map_location=device)
         model.to(device)
         model.eval()
-        print(f"✓ Loaded full model from {model_name}_full.pt")
+        print(f"[OK] Loaded full model from {model_name}_full.pt")
         return model
 
     elif load_format == 'scripted':
         model = torch.jit.load(f"{model_name}_scripted.pt", map_location=device)
         model.to(device)
         model.eval()
-        print(f"✓ Loaded TorchScript model from {model_name}_scripted.pt")
+        print(f"[OK] Loaded TorchScript model from {model_name}_scripted.pt")
         return model
 
     else:
@@ -1933,7 +1964,7 @@ def freeze_layers(model: nn.Module, layer_names: Optional[List[str]] = None):
         # Freeze all
         for param in model.parameters():
             param.requires_grad = False
-        print("✓ Froze all layers")
+        print("[OK] Froze all layers")
     else:
         # Freeze specific layers
         for name, param in model.named_parameters():
@@ -1956,7 +1987,7 @@ def unfreeze_layers(model: nn.Module, layer_names: Optional[List[str]] = None):
     if layer_names is None:
         for param in model.parameters():
             param.requires_grad = True
-        print("✓ Unfroze all layers")
+        print("[OK] Unfroze all layers")
     else:
         for name, param in model.named_parameters():
             if any(layer_name in name for layer_name in layer_names):
@@ -1983,19 +2014,20 @@ def get_device(prefer_gpu: bool = True) -> torch.device:
     >>> device = get_device()
     >>> model.to(device)
     """
+    _require_pytorch()
     if prefer_gpu:
         if torch.cuda.is_available():
             device = torch.device('cuda')
-            print(f"✓ Using CUDA GPU: {torch.cuda.get_device_name(0)}")
+            print(f"[OK] Using CUDA GPU: {torch.cuda.get_device_name(0)}")
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             device = torch.device('mps')
-            print("✓ Using Apple MPS (Metal)")
+            print("[OK] Using Apple MPS (Metal)")
         else:
             device = torch.device('cpu')
-            print("⚠️  No GPU available, using CPU")
+            print("[WARN] No GPU available, using CPU")
     else:
         device = torch.device('cpu')
-        print("✓ Using CPU")
+        print("[OK] Using CPU")
 
     return device
 
@@ -2013,6 +2045,7 @@ def set_seed(seed: int = 42):
     ---------
     >>> set_seed(42)  # Ensures reproducible results
     """
+    _require_pytorch()
     import random
     random.seed(seed)
     np.random.seed(seed)
@@ -2022,7 +2055,7 @@ def set_seed(seed: int = 42):
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    print(f"✓ Set random seed to {seed}")
+    print(f"[OK] Set random seed to {seed}")
 
 
 def create_data_loaders(
@@ -2071,6 +2104,7 @@ def create_data_loaders(
     >>> train_loader = create_data_loaders(X_train, y_train, batch_size=32)
     """
     # Convert to tensors
+    _require_pytorch()
     X_train_tensor = torch.FloatTensor(X_train)
     y_train_tensor = torch.FloatTensor(y_train)
 
@@ -2103,6 +2137,7 @@ def create_data_loaders(
 
 def accuracy_pytorch(outputs: torch.Tensor, targets: torch.Tensor) -> float:
     """Calculate accuracy for PyTorch tensors."""
+    _require_pytorch()
     if outputs.shape[1] > 1:  # Multi-class
         _, predicted = torch.max(outputs, 1)
         correct = (predicted == targets).sum().item()
@@ -2115,6 +2150,7 @@ def accuracy_pytorch(outputs: torch.Tensor, targets: torch.Tensor) -> float:
 
 def f1_score_pytorch(outputs: torch.Tensor, targets: torch.Tensor) -> float:
     """Calculate F1 score for PyTorch tensors."""
+    _require_pytorch()
     predicted = (outputs > 0.5).float() if outputs.shape[1] == 1 else torch.argmax(outputs, dim=1)
 
     tp = ((predicted == 1) & (targets == 1)).sum().float()
@@ -2130,7 +2166,7 @@ def f1_score_pytorch(outputs: torch.Tensor, targets: torch.Tensor) -> float:
 
 # ==================== PRE-BUILT MODELS ====================
 
-class SimpleClassifier(nn.Module):
+class SimpleClassifier(_TorchModuleBase):
     """Simple fully-connected classifier."""
 
     def __init__(
@@ -2141,6 +2177,7 @@ class SimpleClassifier(nn.Module):
         dropout: float = 0.2,
         activation: str = 'relu'
     ):
+        _require_pytorch()
         super().__init__()
 
         layers = []
@@ -2174,7 +2211,7 @@ class SimpleClassifier(nn.Module):
         return self.model(x)
 
 
-class SimpleRegressor(nn.Module):
+class SimpleRegressor(_TorchModuleBase):
     """Simple fully-connected regressor."""
 
     def __init__(
@@ -2184,6 +2221,7 @@ class SimpleRegressor(nn.Module):
         output_size: int = 1,
         dropout: float = 0.2
     ):
+        _require_pytorch()
         super().__init__()
 
         layers = []

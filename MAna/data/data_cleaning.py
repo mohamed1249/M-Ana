@@ -7,6 +7,44 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
+
+def _make_hashable(value: Any) -> Any:
+    """Return a stable, hashable representation of nested cell values."""
+    if isinstance(value, dict):
+        items = (
+            (_make_hashable(key), _make_hashable(item))
+            for key, item in value.items()
+        )
+        return tuple(sorted(items, key=repr))
+    if isinstance(value, np.ndarray):
+        return tuple(_make_hashable(item) for item in value.tolist())
+    if isinstance(value, (list, tuple)):
+        return tuple(_make_hashable(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return tuple(sorted((_make_hashable(item) for item in value), key=repr))
+
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
+
+
+def _comparable_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Copy a frame and normalize unhashable object cells for comparisons."""
+    comparable = df.copy()
+    for column in comparable.select_dtypes(include=["object"]).columns:
+        comparable[column] = comparable[column].map(_make_hashable)
+    return comparable
+
+
+def _safe_nunique(series: pd.Series) -> int:
+    """Count unique values even when an object series contains nested values."""
+    if pd.api.types.is_object_dtype(series.dtype):
+        series = series.map(_make_hashable)
+    return int(series.nunique(dropna=True))
+
+
 def drop_missing_values(df, threshold=0.5, axis=0, subset=None) -> pd.DataFrame:
     """
     Drops missing values from a dataframe.
@@ -1009,12 +1047,13 @@ class DataCleaner:
         """Calculate data quality metrics."""
         total_cells = df.shape[0] * df.shape[1]
         missing_cells = df.isnull().sum().sum()
+        unique_rows = _comparable_frame(df).drop_duplicates().shape[0]
 
         return {
             'completeness': 1 - (missing_cells / total_cells) if total_cells > 0 else 0,
             'validity': 1.0,  # Will be updated during validation
             'consistency': 1.0,  # Will be updated during cleaning
-            'uniqueness': df.drop_duplicates().shape[0] / df.shape[0] if df.shape[0] > 0 else 1.0
+            'uniqueness': unique_rows / df.shape[0] if df.shape[0] > 0 else 1.0
         }
 
     def _auto_detect_column_types(self):
@@ -1039,7 +1078,7 @@ class DataCleaner:
                 if col in self.id_columns or col == self.target_column:
                     continue
                 # Consider as categorical if unique values < 50% of total rows
-                unique_ratio = self.df[col].nunique() / len(self.df)
+                unique_ratio = _safe_nunique(self.df[col]) / len(self.df)
                 if unique_ratio < 0.5:
                     self.categorical_columns.append(col)
                 elif self.text_columns is None:
@@ -1528,7 +1567,11 @@ class DataCleaner:
         self._log("Removing duplicates...")
 
         before_count = len(self.df)
-        self.df = self.df.drop_duplicates(subset=subset, keep=keep)
+        duplicate_mask = _comparable_frame(self.df).duplicated(
+            subset=subset,
+            keep=keep,
+        )
+        self.df = self.df.loc[~duplicate_mask].copy()
         after_count = len(self.df)
 
         duplicates_removed = before_count - after_count
@@ -1717,7 +1760,7 @@ class DataCleaner:
                 original_dtype = str(self.df[col].dtype)
                 if self.df[col].dtype == 'object':
                     # Convert to category if cardinality is low
-                    if self.df[col].nunique() / len(self.df) < 0.5:
+                    if _safe_nunique(self.df[col]) / len(self.df) < 0.5:
                         self.df[col] = self.df[col].astype('category')
                         new_dtype = 'category'
                         self.report.data_types_changed[col] = (original_dtype, new_dtype)
@@ -2085,17 +2128,18 @@ class DataCleaner:
             'memory_usage_mb': self.df.memory_usage(deep=True).sum() / 1024**2,
             'columns': {},
             'missing_values': {},
-            'duplicates': self.df.duplicated().sum(),
+            'duplicates': int(_comparable_frame(self.df).duplicated().sum()),
             'data_quality': self._calculate_data_quality(self.df)
         }
 
         for col in self.df.columns:
+            unique_count = _safe_nunique(self.df[col])
             col_profile = {
                 'dtype': str(self.df[col].dtype),
                 'missing': self.df[col].isnull().sum(),
                 'missing_percent': self.df[col].isnull().sum() / len(self.df) * 100,
-                'unique': self.df[col].nunique(),
-                'unique_percent': self.df[col].nunique() / len(self.df) * 100
+                'unique': unique_count,
+                'unique_percent': unique_count / len(self.df) * 100
             }
 
             if pd.api.types.is_numeric_dtype(self.df[col]):
@@ -2186,14 +2230,14 @@ class DataCleaner:
                 self.df_original.shape[0],
                 self.df_original.shape[1],
                 self.df_original.isnull().sum().sum(),
-                self.df_original.duplicated().sum(),
+                _comparable_frame(self.df_original).duplicated().sum(),
                 self.df_original.memory_usage(deep=True).sum() / 1024**2
             ],
             'Cleaned': [
                 self.df.shape[0],
                 self.df.shape[1],
                 self.df.isnull().sum().sum(),
-                self.df.duplicated().sum(),
+                _comparable_frame(self.df).duplicated().sum(),
                 self.df.memory_usage(deep=True).sum() / 1024**2
             ]
         })

@@ -4,6 +4,44 @@ import pandas as pd
 
 
 class DataCleanerPipelineTests(unittest.TestCase):
+    def test_nested_object_columns_support_quality_and_duplicate_checks(self):
+        from MAna.data import DataCleaner
+
+        frame = pd.DataFrame(
+            {
+                "overview": ["A story", "A story", "Another story"],
+                "genres": [
+                    ["Drama", "History"],
+                    ["Drama", "History"],
+                    ["Comedy"],
+                ],
+                "metadata": [
+                    {"language": "en"},
+                    {"language": "en"},
+                    {"language": "fr"},
+                ],
+                "keywords": [
+                    {"period", "war"},
+                    {"war", "period"},
+                    {"family"},
+                ],
+            }
+        )
+
+        cleaner = DataCleaner(frame, verbose=False)
+        self.assertAlmostEqual(
+            cleaner.get_report().data_quality_before["uniqueness"],
+            2 / 3,
+        )
+
+        profile = cleaner.profile_data()
+        self.assertEqual(profile["duplicates"], 1)
+        self.assertEqual(profile["columns"]["genres"]["unique"], 2)
+
+        cleaned = cleaner.remove_duplicates().get_cleaned_data()
+        self.assertEqual(len(cleaned), 2)
+        self.assertEqual(cleaned.iloc[0]["genres"], ["Drama", "History"])
+
     def test_structural_preprocessing_methods_are_chainable(self):
         from MAna.data import DataCleaner
 

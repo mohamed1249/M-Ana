@@ -1,8 +1,9 @@
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -803,9 +804,20 @@ class CleaningReport:
 
     # Processing time
     processing_time: float = 0.0
+    _refresh_callback: Optional[Callable[[], None]] = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def _refresh(self) -> None:
+        """Refresh live metrics when this report belongs to a DataCleaner."""
+        if self._refresh_callback is not None:
+            self._refresh_callback()
 
     def to_dict(self) -> Dict:
         """Convert report to dictionary."""
+        self._refresh()
         return {
             'timestamp': self.timestamp,
             'original_shape': self.original_shape,
@@ -838,6 +850,7 @@ class CleaningReport:
 
     def summary(self) -> str:
         """Generate human-readable summary."""
+        self._refresh()
         summary = f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║              DATA CLEANING REPORT                            ║
@@ -968,6 +981,7 @@ class DataCleaner:
         log_file : str, optional
             Path to save detailed logs.
         """
+        self._started_at = time.perf_counter()
         self.df_original = df.copy()
         self.df = df.copy()
         self.target_column = target_column
@@ -982,6 +996,7 @@ class DataCleaner:
             original_shape=df.shape,
             data_quality_before=self._calculate_data_quality(df)
         )
+        self.report._refresh_callback = self._refresh_report
 
         # Setup logging
         self.logger = self._setup_logger(log_file)
@@ -1042,6 +1057,13 @@ class DataCleaner:
             self.report.errors.append(message)
         elif level == 'debug':
             self.logger.debug(message)
+
+    def _refresh_report(self) -> None:
+        """Synchronize report totals with the cleaner's current DataFrame."""
+        self.report.final_shape = self.df.shape
+        self.report.data_quality_after = self._calculate_data_quality(self.df)
+        if self.report.processing_time == 0.0:
+            self.report.processing_time = time.perf_counter() - self._started_at
 
     def _calculate_data_quality(self, df: pd.DataFrame) -> Dict[str, float]:
         """Calculate data quality metrics."""
@@ -2047,8 +2069,7 @@ class DataCleaner:
         pd.DataFrame
             Cleaned DataFrame.
         """
-        import time
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         self._log("=" * 60)
         self._log("STARTING COMPREHENSIVE DATA CLEANING")
@@ -2093,7 +2114,7 @@ class DataCleaner:
         # Finalize report
         self.report.final_shape = self.df.shape
         self.report.data_quality_after = self._calculate_data_quality(self.df)
-        self.report.processing_time = time.time() - start_time
+        self.report.processing_time = time.perf_counter() - start_time
 
         self._log("=" * 60)
         self._log("CLEANING COMPLETED")
@@ -2108,10 +2129,12 @@ class DataCleaner:
 
     def get_cleaned_data(self) -> pd.DataFrame:
         """Get the cleaned DataFrame."""
+        self._refresh_report()
         return self.df.copy()
 
     def get_report(self) -> CleaningReport:
         """Get the cleaning report."""
+        self._refresh_report()
         return self.report
 
     def profile_data(self) -> Dict[str, Any]:
@@ -2208,11 +2231,13 @@ class DataCleaner:
 
     def reset(self):
         """Reset to original DataFrame."""
+        self._started_at = time.perf_counter()
         self.df = self.df_original.copy()
         self.report = CleaningReport(
             original_shape=self.df_original.shape,
             data_quality_before=self._calculate_data_quality(self.df_original)
         )
+        self.report._refresh_callback = self._refresh_report
         self.pipeline_steps = []
         self._log("Reset to original DataFrame")
 

@@ -4,6 +4,36 @@ import pandas as pd
 
 
 class DataCleanerPipelineTests(unittest.TestCase):
+    def test_manual_pipeline_refreshes_report_metrics(self):
+        from MAna.data import DataCleaner
+
+        frame = pd.DataFrame(
+            {
+                "customer_id": [1, 1, 2, 3],
+                "score": [10.0, 10.0, 20.0, 30.0],
+            }
+        )
+
+        cleaner = DataCleaner(
+            frame,
+            id_columns=["customer_id"],
+            numerical_columns=["score"],
+            categorical_columns=[],
+            verbose=False,
+        )
+        cleaner.remove_duplicates().scale_features(method="robust")
+
+        report = cleaner.get_report()
+        self.assertEqual(report.final_shape, (3, 2))
+        self.assertEqual(report.duplicates_removed, 1)
+        self.assertEqual(report.data_quality_after["completeness"], 1.0)
+        self.assertGreater(report.processing_time, 0.0)
+
+        # Direct report access must also refresh after another manual operation.
+        cleaner.drop_columns(columns=["customer_id"])
+        report.summary()
+        self.assertEqual(report.final_shape, (3, 1))
+
     def test_nested_object_columns_support_quality_and_duplicate_checks(self):
         from MAna.data import DataCleaner
 

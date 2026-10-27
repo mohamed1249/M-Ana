@@ -13,7 +13,6 @@ Add feature groups only when needed:
 ```bash
 python -m pip install -e ".[stata,database,timeseries]"
 python -m pip install -e ".[nlp,rag]"
-python -m pip install -e ".[big]"
 ```
 
 ## Use a module
@@ -27,5 +26,5 @@ split = chronological_split_and_scale(X, y, test_size=0.2, gap=7)
 ```
 
 Optional integrations raise an installation message when their dependency group
-is absent. Importing `MAna` itself does not require Spark, Pinecone, Prophet,
+is absent. Importing `MAna` itself does not require Pinecone, Prophet,
 TensorFlow, or PyTorch.

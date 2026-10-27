@@ -101,14 +101,25 @@ import pandas as pd
 #         return X_train, X_test, y_train, y_test
 
 
-def calculate_rolling_average(data, column_name, window=None) -> pd.DataFrame:
+def calculate_rolling_average(
+    data,
+    column_name,
+    window=None,
+    value_column=None,
+    groupby_col=None,
+) -> pd.DataFrame:
     """
-    Description: This function calculates the rolling average of a column in a pandas dataframe grouped by a specific column using a specified window size.
+    Description: This function calculates the rolling average of a column in a
+    pandas dataframe using a specified window size.
 
     Parameters:
     data: pandas DataFrame containing the data to be aggregated.
-    column_name: string representing the name of the column to calculate the rolling average for.
+    column_name: string representing the column to calculate the rolling average
+    for. For backward compatibility, this is also used as the group column when
+    value_column is provided and groupby_col is omitted.
     window: integer representing the size of the window to calculate the rolling average. If None, the window size is set to 3.
+    value_column: optional string representing the numeric column to average.
+    groupby_col: optional string representing the group column.
 
     Returns:
     A pandas DataFrame containing the rolling average values for each group and time window.
@@ -116,9 +127,28 @@ def calculate_rolling_average(data, column_name, window=None) -> pd.DataFrame:
 
     if window is None:
         window = 3
+    if window <= 0:
+        raise ValueError("window must be greater than zero")
 
-    rolling_average = data.groupby(column_name)[column_name].rolling(window).mean().reset_index()
-    rolling_average = rolling_average.rename(columns={column_name: f'rolling_{window}_avg'})
+    if value_column is None:
+        value_column = column_name
+        groupby_col = groupby_col or column_name
+    else:
+        groupby_col = groupby_col or column_name
+
+    missing = [column for column in (groupby_col, value_column) if column not in data.columns]
+    if missing:
+        raise KeyError(f"Columns not found: {missing}")
+
+    rolling_average = (
+        data.groupby(groupby_col, sort=False)[value_column]
+        .rolling(window)
+        .mean()
+        .reset_index()
+    )
+    rolling_average = rolling_average.rename(
+        columns={value_column: f'rolling_{window}_avg'}
+    )
 
     return rolling_average
 

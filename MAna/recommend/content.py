@@ -183,7 +183,7 @@ class ContentRecommender(BaseRecommender):
                 selected_weights.append(1.0 if weights is None else float(weights[position]))
         if not indices:
             raise ValueError("None of the supplied items exist in the catalog")
-        weight_array = np.asarray(selected_weights, dtype=float)
+        weight_array: np.ndarray = np.asarray(selected_weights, dtype=float)
         if not np.isfinite(weight_array).all() or np.any(weight_array < 0):
             raise ValueError("profile weights must be finite and non-negative")
         if np.isclose(weight_array.sum(), 0.0):

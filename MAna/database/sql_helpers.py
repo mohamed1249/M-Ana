@@ -387,7 +387,11 @@ def upsert(
     connection: Any,
     key_columns: Union[str, List[str]],
     batch_size: int = 1000,
-    show_progress: bool = False
+    show_progress: bool = False,
+    schema: Optional[str] = None,
+    update_columns: Optional[List[str]] = None,
+    conflict_constraint: Optional[str] = None,
+    do_nothing: bool = False,
 ) -> int:
     """
     Insert or update rows (UPSERT operation).
@@ -408,6 +412,14 @@ def upsert(
         Batch size for processing.
     show_progress : bool
         Show progress bar.
+    schema : str, optional
+        PostgreSQL schema name.
+    update_columns : list, optional
+        PostgreSQL columns to update on conflict. Defaults to all non-key columns.
+    conflict_constraint : str, optional
+        PostgreSQL unique or primary-key constraint to target instead of columns.
+    do_nothing : bool
+        Skip conflicting PostgreSQL rows instead of updating them.
 
     Returns:
     --------
@@ -429,14 +441,28 @@ def upsert(
         print(f"⏳ Upserting {len(df):,} rows to '{table_name}'...")
 
     # Get database type
-    db_type = str(connection.url.drivername) if hasattr(connection, 'url') else 'unknown'
+    sql_connection = getattr(connection, 'engine', connection)
+    db_type = (
+        str(sql_connection.url.drivername)
+        if hasattr(sql_connection, 'url')
+        else 'unknown'
+    )
 
     rows_affected = 0
 
     if 'postgresql' in db_type:
         # PostgreSQL - use ON CONFLICT
         rows_affected = _upsert_postgresql(
-            df, table_name, connection, key_columns, batch_size, show_progress
+            df,
+            table_name,
+            connection,
+            key_columns,
+            batch_size,
+            show_progress,
+            schema=schema,
+            update_columns=update_columns,
+            conflict_constraint=conflict_constraint,
+            do_nothing=do_nothing,
         )
 
     elif 'mysql' in db_type:
@@ -463,45 +489,27 @@ def _upsert_postgresql(
     connection: Any,
     key_columns: List[str],
     batch_size: int,
-    show_progress: bool
+    show_progress: bool,
+    schema: Optional[str] = None,
+    update_columns: Optional[List[str]] = None,
+    conflict_constraint: Optional[str] = None,
+    do_nothing: bool = False,
 ) -> int:
-    """PostgreSQL UPSERT using ON CONFLICT."""
-    from sqlalchemy import MetaData, Table
+    """PostgreSQL UPSERT using batched ``ON CONFLICT`` execution."""
+    from .postgres import upsert_postgres
 
-    metadata = MetaData()
-    table = Table(table_name, metadata, autoload_with=connection)
-
-    # Get all column names
-    all_columns = [col.name for col in table.columns]
-    update_columns = [col for col in all_columns if col not in key_columns]
-
-    # Build UPSERT query
-    columns_str = ', '.join(all_columns)
-    placeholders = ', '.join([f':{col}' for col in all_columns])
-    conflict_columns = ', '.join(key_columns)
-    updates = ', '.join([f'{col} = EXCLUDED.{col}' for col in update_columns])
-
-    query = f"""
-    INSERT INTO {table_name} ({columns_str})
-    VALUES ({placeholders})
-    ON CONFLICT ({conflict_columns})
-    DO UPDATE SET {updates}
-    """
-
-    # Execute in batches
-    total_rows = 0
-    with connection.connect() as conn:
-        for i in range(0, len(df), batch_size):
-            batch = df.iloc[i:i + batch_size]
-            records = batch.to_dict('records')
-
-            for record in records:
-                conn.execute(text(query), record)
-
-            conn.commit()
-            total_rows += len(batch)
-
-    return total_rows
+    return upsert_postgres(
+        df=df,
+        table_name=table_name,
+        connection=connection,
+        key_columns=key_columns,
+        schema=schema,
+        update_columns=update_columns,
+        conflict_constraint=conflict_constraint,
+        do_nothing=do_nothing,
+        batch_size=batch_size,
+        show_progress=show_progress,
+    )
 
 
 def _upsert_mysql(
@@ -557,6 +565,9 @@ def _upsert_generic(
     """Generic UPSERT: delete existing then insert."""
     # This is less efficient but works for all databases
 
+    def _python_scalar(value: Any) -> Any:
+        return value.item() if hasattr(value, "item") else value
+
     # First, delete existing rows
     key_values = df[key_columns].drop_duplicates()
 
@@ -565,7 +576,7 @@ def _upsert_generic(
             where_clause = ' AND '.join([f"{col} = :{col}" for col in key_columns])
             delete_query = f"DELETE FROM {table_name} WHERE {where_clause}"
 
-            params = {col: row[col] for col in key_columns}
+            params = {col: _python_scalar(row[col]) for col in key_columns}
             conn.execute(text(delete_query), params)
 
         conn.commit()

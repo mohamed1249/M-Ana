@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "M_Ana_package"
 dynamic = ["version"]
-description = "A practical data-science toolkit for analysis, NLP, RAG, recommenders, statistics, time series, databases, and Spark."
+description = "A practical data-science toolkit for analysis, NLP, RAG, recommenders, statistics, time series, and databases."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
 license = "MIT"
@@ -22,10 +22,9 @@ keywords = [
   "statistics",
   "time series",
   "databases",
-  "pyspark",
 ]
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",
@@ -79,13 +78,12 @@ timeseries = [
 modeling = ["h5py", "pyod", "tensorflow", "torch"]
 nlp = ["sentence-transformers", "transformers", "vaderSentiment"]
 rag = ["faiss-cpu", "openai", "pinecone", "pypdf", "sentence-transformers"]
-big = ["pyspark>=3.5"]
 docs = [
   "mkdocs>=1.5",
   "mkdocs-material>=9",
   "mkdocstrings[python]>=0.25",
 ]
-test = ["seaborn", "sqlalchemy", "statsmodels"]
+test = ["plotly", "seaborn", "sqlalchemy", "statsmodels"]
 dev = [
   "build>=1.2",
   "mypy>=1.10,<2",
@@ -117,7 +115,6 @@ all = [
   "pyperclip",
   "pypdf",
   "pyreadstat",
-  "pyspark>=3.5",
   "python-dotenv",
   "requests",
   "sas7bdat",
@@ -162,7 +159,9 @@ ignore = ["F403", "F405"]
 "MAna/**/__init__.py" = ["F401"]
 
 [tool.mypy]
-python_version = "3.9"
+# Static analysis runs in the Python 3.12 quality job. Runtime compatibility is
+# verified separately by the 3.9-3.13 test matrix.
+python_version = "3.12"
 check_untyped_defs = true
 ignore_missing_imports = true
 no_implicit_optional = false

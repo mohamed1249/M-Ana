@@ -1,5 +1,17 @@
 # API reference
 
+## Data
+
+::: MAna.data
+
+## Modeling
+
+::: MAna.modeling
+
+## Analysis
+
+::: MAna.analysis
+
 ## Statistics
 
 ::: MAna.stata
@@ -12,6 +24,13 @@
 
 ::: MAna.database
 
+### PostgreSQL
+
+PostgreSQL-specific connection, `COPY`, batch-upsert, catalog, query-plan, and
+maintenance helpers.
+
+::: MAna.database.postgres
+
 ## NLP
 
 ::: MAna.nlp
@@ -23,7 +42,3 @@
 ## Recommenders
 
 ::: MAna.recommend
-
-## Big-data processing
-
-::: MAna.big

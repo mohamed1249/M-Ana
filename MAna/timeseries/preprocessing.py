@@ -174,12 +174,12 @@ def validate_timeseries(
             print(f"  Duplicate Timestamps: {report['n_duplicates']:,}")
 
         if report['is_valid']:
-            print("\n✓ VALIDATION PASSED")
+            print("\n[OK] VALIDATION PASSED")
         else:
             print("\n✗ VALIDATION FAILED")
 
         if issues:
-            print(f"\n⚠️  Issues Found ({len(issues)}):")
+            print(f"\n[WARN] Issues Found ({len(issues)}):")
             for i, issue in enumerate(issues, 1):
                 print(f"  {i}. {issue}")
 
@@ -250,7 +250,7 @@ def create_datetime_index(
     # Note: drop_date_column parameter is misleading here since it's already the index
     # Keeping for backward compatibility
 
-    print(f"✓ Created DatetimeIndex from '{date_column}'")
+    print(f"[OK] Created DatetimeIndex from '{date_column}'")
     print(f"  Range: {df.index.min()} to {df.index.max()}")
     print(f"  Records: {len(df):,}")
 
@@ -324,8 +324,15 @@ def detect_frequency(
         return None
 
     if return_timedelta:
-        # Convert frequency string to timedelta
-        return pd.tseries.frequencies.to_offset(freq).delta
+        # Convert fixed frequency strings to Timedelta without relying on the
+        # deprecated DateOffset.delta attribute.
+        offset = pd.tseries.frequencies.to_offset(freq)
+        try:
+            return pd.Timedelta(offset.nanos, unit="ns")
+        except ValueError:
+            # Calendar-dependent offsets such as months do not have one fixed
+            # Timedelta representation.
+            return None
 
     return freq
 
@@ -418,7 +425,7 @@ def resample_timeseries(
         else:
             raise ValueError(f"Unknown fill method: {fill_method}")
 
-    print(f"✓ Resampled from {len(data):,} to {len(result):,} records (frequency: {freq})")
+    print(f"[OK] Resampled from {len(data):,} to {len(result):,} records (frequency: {freq})")
 
     return result
 
@@ -507,7 +514,7 @@ def fill_missing_timestamps(
         raise ValueError(f"Unknown fill method: {method}")
 
     added_timestamps = len(result) - len(data)
-    print(f"✓ Added {added_timestamps} missing timestamps")
+    print(f"[OK] Added {added_timestamps} missing timestamps")
     print(f"  Original: {len(data):,} records")
     print(f"  Complete: {len(result):,} records")
 
@@ -556,6 +563,7 @@ def test_stationarity(
     ... else:
     ...     print("⚠️  Data is non-stationary, apply differencing")
     """
+    from statsmodels.tools.sm_exceptions import InterpolationWarning
     from statsmodels.tsa.stattools import adfuller, kpss
 
     if isinstance(data, pd.Series):
@@ -588,12 +596,12 @@ def test_stationarity(
 
             print(f"\n{'='*70}")
             if is_stationary:
-                print("✓ CONCLUSION: Series is STATIONARY")
+                print("[OK] CONCLUSION: Series is STATIONARY")
                 print(f"  (p-value {p_value:.4f} < {alpha})")
             else:
-                print("⚠️  CONCLUSION: Series is NON-STATIONARY")
+                print("[WARN] CONCLUSION: Series is NON-STATIONARY")
                 print(f"  (p-value {p_value:.4f} >= {alpha})")
-                print("\n  💡 Suggestion: Try differencing the series")
+                print("\n  Suggestion: Try differencing the series")
             print("=" * 70)
 
         return {
@@ -609,7 +617,12 @@ def test_stationarity(
         # KPSS test
         # H0: Series is stationary
         # H1: Series has a unit root (non-stationary)
-        result = kpss(data, regression='c', nlags='auto')
+        # statsmodels raises InterpolationWarning when the statistic sits
+        # outside its lookup table. The returned p-value is still the documented
+        # bounded value, so suppress the expected warning for cleaner notebooks.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", InterpolationWarning)
+            result = kpss(data, regression='c', nlags='auto')
 
         test_stat = result[0]
         p_value = result[1]
@@ -632,12 +645,12 @@ def test_stationarity(
 
             print(f"\n{'='*70}")
             if is_stationary:
-                print("✓ CONCLUSION: Series is STATIONARY")
+                print("[OK] CONCLUSION: Series is STATIONARY")
                 print(f"  (p-value {p_value:.4f} >= {alpha})")
             else:
-                print("⚠️  CONCLUSION: Series is NON-STATIONARY")
+                print("[WARN] CONCLUSION: Series is NON-STATIONARY")
                 print(f"  (p-value {p_value:.4f} < {alpha})")
-                print("\n  💡 Suggestion: Try differencing the series")
+                print("\n  Suggestion: Try differencing the series")
             print("=" * 70)
 
         return {
@@ -698,7 +711,7 @@ def difference_series(
     # Drop NaN values created by differencing
     result = result.dropna()
 
-    print("✓ Applied differencing")
+    print("[OK] Applied differencing")
     print(f"  Original length: {len(data):,}")
     print(f"  Differenced length: {len(result):,}")
 
@@ -761,7 +774,7 @@ def train_test_split_ts(
     train = data.iloc[:train_n]
     test = data.iloc[train_n + gap:]
 
-    print("✓ Train/Test Split")
+    print("[OK] Train/Test Split")
     print(f"  Train: {len(train):,} observations ({len(train)/n*100:.1f}%)")
     if gap > 0:
         print(f"  Gap: {gap} observations")
@@ -839,6 +852,26 @@ def remove_outliers_ts(
                 outlier_idx.extend(result[col][outliers].index.tolist())
             outlier_idx = list(set(outlier_idx))
 
+    elif method == 'mad':
+        # Median Absolute Deviation method. This is robust when a few extreme
+        # spikes would inflate the standard deviation and weaken z-score rules.
+        def mad_outlier_index(series):
+            clean = series.dropna()
+            median = clean.median()
+            mad = np.median(np.abs(clean - median))
+            if mad == 0:
+                return clean.index[clean != median]
+            modified_z = 0.6745 * (clean - median) / mad
+            return clean.index[np.abs(modified_z) > threshold]
+
+        if isinstance(result, pd.Series):
+            outlier_idx = mad_outlier_index(result)
+        else:
+            outlier_idx = []
+            for col in result.columns:
+                outlier_idx.extend(mad_outlier_index(result[col]).tolist())
+            outlier_idx = list(set(outlier_idx))
+
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -863,7 +896,7 @@ def remove_outliers_ts(
                 col_outliers = [idx for idx in outlier_idx if idx in result[col].index]
                 result.loc[col_outliers, col] = result[col].median()
 
-    print(f"✓ Outlier handling ({method} method)")
+    print(f"[OK] Outlier handling ({method} method)")
     print(f"  Found: {len(outlier_idx)} outliers")
     print(f"  Action: {replace_with}")
 

@@ -36,7 +36,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev,test]"
       - run: ruff check MAna tests
-      - run: mypy MAna/_version.py MAna/big MAna/recommend --follow-imports=skip
+      - run: mypy MAna/_version.py MAna/database/postgres.py MAna/recommend --follow-imports=skip
       - run: python -m build
       - run: twine check dist/*
 
@@ -51,19 +51,3 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[docs]"
       - run: mkdocs build --strict
-
-  spark-integration:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[big]"
-      - run: python -m unittest tests.test_big_spark_integration -v

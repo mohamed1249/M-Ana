@@ -693,17 +693,17 @@ class PostgreSQLConnector(DatabaseConnector):
         )
         super().__init__(config, **kwargs)
 
-    def get_schemas(self) -> List[str]:
-        """Get list of all schemas in PostgreSQL database."""
-        query = """
-        SELECT schema_name
-        FROM information_schema.schemata
-        WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
-        """
-        result = self.query(query)
-        return result['schema_name'].tolist()
+    def get_schemas(self, include_system: bool = False) -> List[str]:
+        """Get visible PostgreSQL schemas."""
+        from .postgres import list_postgres_schemas
 
-    def vacuum_analyze(self, table_name: Optional[str] = None):
+        return list_postgres_schemas(self, include_system=include_system)
+
+    def vacuum_analyze(
+        self,
+        table_name: Optional[str] = None,
+        schema: Optional[str] = 'public',
+    ):
         """
         Run VACUUM ANALYZE to optimize table.
 
@@ -712,12 +712,9 @@ class PostgreSQLConnector(DatabaseConnector):
         table_name : str, optional
             Specific table to vacuum (vacuums all if None).
         """
-        if table_name:
-            query = f"VACUUM ANALYZE {table_name}"
-        else:
-            query = "VACUUM ANALYZE"
+        from .postgres import vacuum_analyze_postgres
 
-        self.execute(query, commit=False)
+        vacuum_analyze_postgres(self, table_name=table_name, schema=schema)
         print("[OK] VACUUM ANALYZE completed" + (f" for {table_name}" if table_name else ""))
 
 

@@ -650,14 +650,20 @@ def optimize_datatypes(
         elif col_type == 'float64':
             df_optimized[col] = df_optimized[col].astype('float32')
 
-        # Convert low-cardinality strings to category
+        # Convert low-cardinality strings to category. Object columns may also
+        # contain unhashable values such as PostgreSQL JSON lists/dicts, which
+        # cannot be passed to Series.nunique() or converted to categories.
         elif col_type == 'object':
-            num_unique = df_optimized[col].nunique()
-            num_total = len(df_optimized[col])
+            series = df_optimized[col]
+            non_null = series.dropna()
+            if non_null.empty or not non_null.map(
+                lambda value: isinstance(value, str)
+            ).all():
+                continue
 
             # If less than 50% unique values, convert to category
-            if num_unique / num_total < 0.5:
-                df_optimized[col] = df_optimized[col].astype('category')
+            if series.nunique() / len(series) < 0.5:
+                df_optimized[col] = series.astype('category')
 
     optimized_memory = df_optimized.memory_usage(deep=True).sum()
     memory_saved = original_memory - optimized_memory

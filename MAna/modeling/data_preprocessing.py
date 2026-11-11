@@ -4,6 +4,8 @@ from typing import Any
 
 import pandas as pd
 
+from .correlation_grouping import CorrelationGrouper as CorrelationGrouper
+
 # class FeatureEngineering:
 
 #     import pandas as pd

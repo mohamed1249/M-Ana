@@ -636,6 +636,74 @@ def evaluate_clustering(
 
 # ==================== CROSS-VALIDATION ====================
 
+class CrossValidationResults(dict):
+    """Dictionary-compatible scores with a compact notebook representation.
+
+    Raw sklearn scorer signs and existing keys are preserved. Display tables
+    reverse negative-loss scorers for readability; they do not alter results.
+    """
+
+    @staticmethod
+    def _label(name):
+        return {'r2': 'R²', 'mean_squared_error': 'MSE',
+                'mean_absolute_error': 'MAE'}.get(name, name.replace('_', ' '))
+
+    def summary(self):
+        """Return positive-loss display statistics for each split and metric."""
+        rows = []
+        for key, values in self.items():
+            if not key.endswith('_scores'):
+                continue
+            split, metric = key[:-7].split('_', 1)
+            values = np.asarray(values, dtype=float)
+            if metric.startswith('neg_'):
+                metric, values = metric[4:], -values
+            rows.append({'Split': 'Validation' if split == 'test' else 'Train',
+                         'Metric': self._label(metric), 'Mean': np.mean(values),
+                         'Std': np.std(values), 'Min': np.min(values),
+                         'Max': np.max(values)})
+        return pd.DataFrame(rows)
+
+    def fold_scores(self):
+        """Return a fold table with negative-loss signs reversed for display."""
+        columns = {}
+        for key, values in self.items():
+            if not key.endswith('_scores'):
+                continue
+            split, metric = key[:-7].split('_', 1)
+            values = np.asarray(values, dtype=float)
+            if metric.startswith('neg_'):
+                metric, values = metric[4:], -values
+            label = 'Validation' if split == 'test' else 'Train'
+            columns[f'{label} {self._label(metric)}'] = values
+        frame = pd.DataFrame(columns)
+        frame.index = pd.RangeIndex(1, len(frame) + 1, name='Fold')
+        return frame
+
+    def _notice(self):
+        notes = ['Loss metrics display as positive values; raw dictionary scores retain sklearn signs.']
+        scores = np.asarray(self.get('test_r2_scores', []))
+        if np.any(scores < 0):
+            folds = ', '.join(str(i + 1) for i in np.flatnonzero(scores < 0))
+            notes.append(f'Negative validation R² in fold(s) {folds}: worse than predicting the validation target mean.')
+        if any(not np.isfinite(v).all() for k, v in self.items() if k.endswith('_scores')):
+            notes.append('Non-finite scores detected; inspect failed fits or undefined metrics.')
+        return ' '.join(notes)
+
+    def __repr__(self):
+        return ('Cross-validation summary\n' + self.summary().to_string(
+            index=False, float_format=lambda x: f'{x:.4g}') + '\n' + self._notice())
+
+    def _repr_html_(self):
+        from html import escape
+        return ('<div><strong>Cross-validation summary</strong>'
+                + self.summary().to_html(index=False, float_format=lambda x: f'{x:.4g}')
+                + '<p>' + escape(self._notice()) + '</p>'
+                + '<details><summary>Per-fold scores</summary>'
+                + self.fold_scores().to_html(float_format=lambda x: f'{x:.4g}')
+                + '</details></div>')
+
+
 def cross_validate_model(
     model,
     X,
@@ -668,7 +736,8 @@ def cross_validate_model(
     Returns:
     --------
     dict
-        Cross-validation results with mean and std for each metric.
+        Dictionary-compatible CrossValidationResults with compact notebook
+        display, summary() and fold_scores(). Raw keys and signs are unchanged.
 
     Examples:
     ---------
@@ -708,7 +777,7 @@ def cross_validate_model(
     )
 
     # Calculate statistics
-    results = {}
+    results = CrossValidationResults()
     for key, values in cv_results.items():
         if key.startswith('test_') or key.startswith('train_'):
             metric_name = key
@@ -729,20 +798,36 @@ def cross_validate_model(
 
         if test_metrics:
             n_metrics = len(test_metrics)
-            fig, axes = plt.subplots(1, n_metrics, figsize=(5*n_metrics, 4))
-
-            if n_metrics == 1:
-                axes = [axes]
+            fig, axes = plt.subplots(n_metrics, 1, figsize=(9, 2.8*n_metrics),
+                                     squeeze=False, constrained_layout=True)
 
             for idx, (metric_name, scores) in enumerate(test_metrics.items()):
-                metric_clean = metric_name.replace('_scores', '')
-                axes[idx].boxplot([scores], labels=[metric_clean])
-                axes[idx].scatter([1]*len(scores), scores, alpha=0.5, s=50)
-                axes[idx].set_title(f'{metric_clean.upper()}\nMean: {np.mean(scores):.4f} +/- {np.std(scores):.4f}')
-                axes[idx].set_ylabel('Score')
-                axes[idx].grid(alpha=0.3, axis='y')
+                metric_clean = metric_name.removesuffix('_scores')
+                scores = np.asarray(scores, dtype=float)
+                if metric_clean.startswith('neg_'):
+                    metric_clean, scores = metric_clean[4:], -scores
+                ax = axes[idx, 0]
+                folds = np.arange(1, len(scores) + 1)
+                ax.plot(folds, scores, 'o-', label='Validation')
+                finite = np.abs(scores[np.isfinite(scores)])
+                nonzero = finite[finite > 0]
+                scale_note = ''
+                if len(nonzero) and nonzero.max() / nonzero.min() > 1000:
+                    from matplotlib.ticker import SymmetricalLogLocator
+                    ax.set_yscale('symlog', linthresh=float(nonzero.min()))
+                    locator = SymmetricalLogLocator(base=10, linthresh=float(nonzero.min()))
+                    locator.set_params(numticks=7)
+                    ax.yaxis.set_major_locator(locator)
+                    scale_note = ' · symlog scale'
+                label = CrossValidationResults._label(metric_clean)
+                ax.set_title(f'{label} | Mean {np.mean(scores):.4g} ± {np.std(scores):.4g}{scale_note}',
+                             loc='left', fontsize=11)
+                ax.set_ylabel(label)
+                ax.set_xlabel('Validation fold')
+                ax.set_xticks(folds)
+                ax.axhline(0, color='gray', linewidth=0.7)
+                ax.grid(alpha=0.3)
 
-            plt.tight_layout()
             plt.show()
 
     return results

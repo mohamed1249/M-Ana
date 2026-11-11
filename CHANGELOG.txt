@@ -1,6 +1,20 @@
 Change Log
 ==========
 
+2.0.0 pre-release additions (2026-11-11)
+--------------------------------------
+- Added dataset fingerprints, feature families, bounded health and relationship
+  diagnostics, evidence-based heuristic advice, HTML exports, and profile plots.
+- Retained fitted DataCleaner scalers and encoders, with inverse transformation,
+  supported new-data transforms, accessors, and fitted joblib persistence.
+- Added CorrelationGrouper for reusable positive-correlation feature aggregation.
+- Improved silhouette layouts for many clusters, optional reproducible sampling,
+  and eliminated redundant silhouette computation.
+- Added readable cross-validation summaries and fold plots while retaining raw
+  scorer signs in dictionary results.
+- Preserved nested JSON object values during database datatype optimization.
+- Fixed CI runner compatibility for Python 3.9 and authenticated PR secret scans.
+
 2.0.0 (2026-07-22)
 ------------------
 - Removed the optional `MAna.big`/PySpark namespace and its Spark-specific CI

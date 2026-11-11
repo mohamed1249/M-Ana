@@ -1,5 +1,8 @@
 # Modeling Module Notebook
 
+For reusable correlation-based feature aggregation, see
+[CorrelationGrouper](../correlation_grouping.md).
+
 This notebook documents `MAna.modeling`, the model-building and model-lifecycle
 layer for classification, regression, clustering, evaluation reports,
 cross-validation, feature importance, automatic model comparison,

@@ -20,6 +20,9 @@ nav:
   - Quick start: quickstart.md
   - API: api.md
   - Tutorials:
+      - Dataset profiling: dataset_profiling.md
+      - Fitted preprocessing: fitted_preprocessing.md
+      - Correlation grouping: correlation_grouping.md
       - Data module notebook: tutorials/data.md
       - Modeling module notebook: tutorials/modeling.md
       - Analysis module notebook: tutorials/analysis.md

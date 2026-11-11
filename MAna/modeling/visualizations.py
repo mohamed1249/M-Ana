@@ -1873,7 +1873,14 @@ def silhouette(
     y_pred,
     figsize: Tuple[int, int] = (10, 7),
     title: str = 'Silhouette Analysis',
-    save_path: Optional[str] = None
+    save_path: Optional[str] = None,
+    *,
+    max_cluster_labels: int = 20,
+    show_legend: Optional[bool] = None,
+    cluster_gap: int = 10,
+    sample_size: Optional[int] = None,
+    random_state: int = 42,
+    show: bool = True,
 ):
     """
     Enhanced silhouette plot.
@@ -1890,17 +1897,48 @@ def silhouette(
         Plot title.
     save_path : str, optional
         Path to save figure.
+    max_cluster_labels : int
+        Maximum number of evenly spaced cluster tick labels (default 20).
+    show_legend : bool, optional
+        Show every cluster in an external legend. By default, only show cluster
+        entries for at most 10 clusters; otherwise show just the average score.
+    cluster_gap : int
+        Empty vertical space between cluster bands.
+    sample_size : int, optional
+        Compute silhouette values on a reproducible random subset. The displayed
+        average and cluster counts then describe that subset, not the full data.
+    random_state : int
+        Seed for optional sampling.
+    show : bool
+        Display the figure. Set False for notebooks, tests, or custom layouts.
 
     Returns:
     --------
     matplotlib.figure.Figure
     """
-    from sklearn.metrics import silhouette_samples, silhouette_score
+    from sklearn.metrics import silhouette_samples
+    from sklearn.utils import _safe_indexing
+
+    if max_cluster_labels < 1 or cluster_gap < 0:
+        raise ValueError('max_cluster_labels must be positive and cluster_gap nonnegative')
+    y_pred = np.asarray(y_pred)
+    sampled = False
+    if sample_size is not None:
+        if sample_size < 2:
+            raise ValueError('sample_size must be at least 2')
+        if sample_size < len(y_pred):
+            indices = np.random.default_rng(random_state).choice(
+                len(y_pred), size=sample_size, replace=False
+            )
+            X = _safe_indexing(X, indices)
+            y_pred = y_pred[indices]
+            sampled = True
 
     cluster_labels = np.unique(y_pred)
     n_clusters = len(cluster_labels)
     silhouette_vals = silhouette_samples(X, y_pred)
-    silhouette_avg = silhouette_score(X, y_pred)
+    silhouette_avg = float(np.mean(silhouette_vals))
+    include_clusters = n_clusters <= 10 if show_legend is None else show_legend
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -1913,14 +1951,18 @@ def silhouette(
         c_silhouette_vals = silhouette_vals[y_pred == cluster]
         c_silhouette_vals.sort()
 
-        y_ax_upper += len(c_silhouette_vals)
+        y_ax_upper = y_ax_lower + len(c_silhouette_vals)
 
-        ax.barh(range(y_ax_lower, y_ax_upper), c_silhouette_vals,
-               height=1.0, edgecolor='none', color=color,
-               label=f'Cluster {cluster} (n={len(c_silhouette_vals)})')
+        ax.fill_betweenx(
+            np.arange(y_ax_lower, y_ax_upper + 1), 0,
+            np.r_[c_silhouette_vals, c_silhouette_vals[-1]],
+            step='post', linewidth=0, color=color,
+            label=(f'Cluster {cluster} (n={len(c_silhouette_vals)})'
+                   if include_clusters else '_nolegend_'),
+        )
 
         yticks.append((y_ax_lower + y_ax_upper) / 2.)
-        y_ax_lower += len(c_silhouette_vals)
+        y_ax_lower = y_ax_upper + cluster_gap
 
     # Average silhouette score line
     ax.axvline(x=silhouette_avg, color="red", linestyle="--", linewidth=2,
@@ -1928,19 +1970,24 @@ def silhouette(
 
     ax.set_xlabel('Silhouette Coefficient', fontsize=12, fontweight='bold')
     ax.set_ylabel('Cluster', fontsize=12, fontweight='bold')
-    ax.set_title(f'{title}\\nAverage Silhouette Score: {silhouette_avg:.3f}',
+    sample_note = f' (sample: {len(y_pred):,})' if sampled else ''
+    ax.set_title(f'{title}\nAverage Silhouette Score: {silhouette_avg:.3f}{sample_note}',
                 fontsize=14, fontweight='bold')
-    ax.set_yticks(yticks)
-    ax.set_yticklabels([f'{int(c)}' for c in cluster_labels])
-    ax.legend(fontsize=9, loc='best')
+    tick_indices = np.unique(np.linspace(
+        0, n_clusters - 1, min(n_clusters, max_cluster_labels), dtype=int
+    ))
+    ax.set_yticks([yticks[i] for i in tick_indices])
+    ax.set_yticklabels([str(cluster_labels[i]) for i in tick_indices])
+    ax.legend(fontsize=9, loc='upper left', bbox_to_anchor=(1.02, 1))
     ax.grid(alpha=0.3, axis='x')
 
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
 
-    plt.show()
+    if show:
+        plt.show()
     return fig
 
 

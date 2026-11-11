@@ -1009,6 +1009,9 @@ class DataCleaner:
 
         # Pipeline tracking for reproducibility
         self.pipeline_steps = []
+        self.scalers = {}
+        self.encoders = {}
+        self._fitted_transforms = []
 
         # Auto-detect column types if not specified
         if not all([categorical_columns, numerical_columns]):
@@ -1909,17 +1912,33 @@ class DataCleaner:
         """
         self._log(f"Encoding categorical variables using {method} method...")
 
-        from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
+        from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, OneHotEncoder
 
         cols_to_encode = columns or self.categorical_columns
+        cols_to_encode = list(cols_to_encode or [])
+        if not cols_to_encode:
+            return self
+        if method not in ('onehot', 'label', 'ordinal', 'target'):
+            raise ValueError(f'Unsupported encoding method: {method}')
+        input_columns = self.df.columns.tolist()
+        original_dtypes = self.df[cols_to_encode].dtypes.to_dict()
+        fitted = {}
 
         if method == 'onehot':
-            # One-hot encoding
-            encoded_df = pd.get_dummies(
-                self.df[cols_to_encode],
-                prefix=cols_to_encode,
-                drop_first=drop_first
+            encoder = OneHotEncoder(
+                drop='first' if drop_first else None,
+                handle_unknown='error',
             )
+            values = encoder.fit_transform(self.df[cols_to_encode]).toarray()
+            new_cols = encoder.get_feature_names_out(cols_to_encode).tolist()
+            if len(set(new_cols)) != len(new_cols) or set(new_cols) & (
+                set(input_columns) - set(cols_to_encode)
+            ):
+                raise ValueError('Encoded feature names collide with existing columns')
+            encoded_df = pd.DataFrame(values, index=self.df.index, columns=new_cols)
+            fitted = {'encoder': encoder, 'output_columns': new_cols}
+            for col in cols_to_encode:
+                self.encoders[col] = encoder
 
             # Drop original columns and add encoded ones
             self.df = self.df.drop(columns=cols_to_encode)
@@ -1936,11 +1955,13 @@ class DataCleaner:
 
         elif method == 'label':
             # Label encoding
-            le = LabelEncoder()
             for col in cols_to_encode:
                 if col not in self.df.columns:
                     continue
-                self.df[col] = le.fit_transform(self.df[col].astype(str))
+                le = LabelEncoder()
+                self.df[col] = le.fit_transform(self.df[col])
+                fitted[col] = le
+                self.encoders[col] = le
                 self.report.encoding_applied[col] = 'label'
                 self._log(f"  {col}: label encoded", 'debug')
 
@@ -1956,6 +1977,8 @@ class DataCleaner:
 
                 # Calculate mean target per category
                 target_means = self.df.groupby(col)[self.target_column].mean()
+                fitted[col] = target_means
+                self.encoders[col] = target_means
                 self.df[f'{col}_target_enc'] = self.df[col].map(target_means)
                 self.report.columns_created.append(f'{col}_target_enc')
                 self.report.encoding_applied[col] = 'target'
@@ -1965,14 +1988,17 @@ class DataCleaner:
             # Ordinal encoding
             categories = kwargs.get('categories', None)
             oe = OrdinalEncoder(categories=categories if categories else 'auto')
-
+            self.df[cols_to_encode] = oe.fit_transform(self.df[cols_to_encode])
+            fitted = {'encoder': oe}
             for col in cols_to_encode:
-                if col not in self.df.columns:
-                    continue
-                self.df[[col]] = oe.fit_transform(self.df[[col]])
+                self.encoders[col] = oe
                 self.report.encoding_applied[col] = 'ordinal'
                 self._log(f"  {col}: ordinal encoded", 'debug')
 
+        self._fitted_transforms.append({
+            'kind': method, 'columns': cols_to_encode, 'objects': fitted,
+            'input_columns': input_columns, 'dtypes': original_dtypes,
+        })
         self.pipeline_steps.append({
             'step': 'encode_categorical',
             'params': {'method': method, 'columns': columns, 'drop_first': drop_first, **kwargs}
@@ -2019,6 +2045,11 @@ class DataCleaner:
             return self
 
         self.df[cols_to_scale] = scaler.fit_transform(self.df[cols_to_scale])
+        for col in cols_to_scale:
+            self.scalers[col] = scaler
+        self._fitted_transforms.append({
+            'kind': 'scale', 'columns': list(cols_to_scale), 'object': scaler,
+        })
 
         for col in cols_to_scale:
             self.report.scaling_applied[col] = method
@@ -2033,6 +2064,101 @@ class DataCleaner:
         return self
 
     # ==================== ALL-IN-ONE CLEANING ====================
+
+    def get_scaler(self, column: str):
+        """Return the latest fitted scaler for a column (possibly shared)."""
+        return self.scalers[column]
+
+    def get_encoder(self, column: str):
+        """Return the latest encoder, or target-encoding mapping, for a column."""
+        return self.encoders[column]
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply learned encodings/scaling without refitting or changing this cleaner.
+
+        Only encoding/scaling pipelines are supported. If cleaning steps were
+        applied, prepare new data separately; their fitted replay is unsupported.
+        Unknown categories raise rather than silently becoming a known category.
+        """
+        unsupported = [s['step'] for s in self.pipeline_steps
+                       if s['step'] not in ('scale_features', 'encode_categorical')]
+        if unsupported:
+            raise ValueError(f'Cannot replay cleaning steps: {unsupported}')
+        result = df.copy()
+        for step in self._fitted_transforms:
+            cols, kind = step['columns'], step['kind']
+            if kind == 'scale':
+                result[cols] = step['object'].transform(result[cols])
+            elif kind == 'onehot':
+                state = step['objects']
+                values = state['encoder'].transform(result[cols]).toarray()
+                encoded = pd.DataFrame(values, index=result.index,
+                                       columns=state['output_columns'])
+                result = pd.concat([result.drop(columns=cols), encoded], axis=1)
+            elif kind == 'ordinal':
+                result[cols] = step['objects']['encoder'].transform(result[cols])
+            elif kind == 'label':
+                for col in cols:
+                    result[col] = step['objects'][col].transform(result[col])
+            elif kind == 'target':
+                for col, mapping in step['objects'].items():
+                    if not result[col].isin(mapping.index).all():
+                        raise ValueError(f'Unknown target-encoding categories in {col}')
+                    result[f'{col}_target_enc'] = result[col].map(mapping)
+        return result
+
+    def inverse_transform(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """Reverse fitted encodings/scaling in reverse order, returning a copy.
+
+        This restores the representation before encoding/scaling, not deleted
+        rows, imputed values, or other irreversible cleaning. Target encoding is
+        explicitly unsupported. Pass a DataFrame with the transformed schema.
+        """
+        if any(s['kind'] == 'target' for s in self._fitted_transforms):
+            raise ValueError('Target encoding is not uniquely invertible')
+        result = self.df.copy() if df is None else df.copy()
+        for step in reversed(self._fitted_transforms):
+            cols, kind = step['columns'], step['kind']
+            if kind == 'scale':
+                result[cols] = step['object'].inverse_transform(result[cols])
+                continue
+            state = step['objects']
+            if kind == 'onehot':
+                values = state['encoder'].inverse_transform(result[state['output_columns']])
+                result = result.drop(columns=state['output_columns'])
+                for i, col in enumerate(cols):
+                    result[col] = values[:, i]
+                extras = [c for c in result.columns if c not in step['input_columns']]
+                result = result[step['input_columns'] + extras]
+            elif kind == 'ordinal':
+                result[cols] = state['encoder'].inverse_transform(result[cols])
+            elif kind == 'label':
+                for col in cols:
+                    values = result[col].to_numpy()
+                    if not np.isfinite(values).all() or not np.equal(values, np.floor(values)).all():
+                        raise ValueError(f'Invalid label codes in {col}')
+                    result[col] = state[col].inverse_transform(values.astype(int))
+            for col, dtype in step['dtypes'].items():
+                result[col] = result[col].astype(dtype)
+        return result
+
+    def save_fitted_pipeline(self, filepath: str) -> None:
+        """Persist this fitted cleaner with joblib, including data and transformers.
+
+        Files contain original/cleaned data; do not share sensitive datasets.
+        """
+        import joblib
+        joblib.dump(self, filepath)
+
+    @classmethod
+    def load_fitted_pipeline(cls, filepath: str) -> 'DataCleaner':
+        """Load a trusted joblib file. Never load untrusted pickle/joblib files."""
+        import joblib
+        cleaner = joblib.load(filepath)
+        if not isinstance(cleaner, cls):
+            raise TypeError('File does not contain a DataCleaner')
+        cleaner._started_at = time.perf_counter()
+        return cleaner
 
     def clean_all(self,
                  missing_strategy: str = 'auto',
@@ -2219,7 +2345,7 @@ class DataCleaner:
 
     def apply_pipeline(self) -> pd.DataFrame:
         """Apply saved pipeline steps."""
-        for step_config in self.pipeline_steps:
+        for step_config in list(self.pipeline_steps):
             step = step_config['step']
             params = step_config['params']
 
@@ -2239,6 +2365,9 @@ class DataCleaner:
         )
         self.report._refresh_callback = self._refresh_report
         self.pipeline_steps = []
+        self.scalers = {}
+        self.encoders = {}
+        self._fitted_transforms = []
         self._log("Reset to original DataFrame")
 
     def compare_with_original(self) -> pd.DataFrame:

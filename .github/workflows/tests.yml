@@ -9,7 +9,8 @@ permissions:
 
 jobs:
   core:
-    runs-on: ubuntu-latest
+    # Python 3.9 has no setup-python build for newer ubuntu-latest images.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:

@@ -15,7 +15,7 @@ python -m pip install -e ".[dev,test]"
 Install only the optional feature groups needed for your change. For example:
 
 ```bash
-python -m pip install -e ".[dev,rag,big]"
+python -m pip install -e ".[dev,rag]"
 ```
 
 ## Before opening a pull request

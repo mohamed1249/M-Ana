@@ -90,7 +90,7 @@ class ItemKNNRecommender(BaseRecommender):
         if history.nnz == 0:
             return recommendation_frame([], [], top_n=top_n, source="item_knn")
 
-        scores = np.zeros(len(interactions.item_ids), dtype=float)
+        scores: np.ndarray = np.zeros(len(interactions.item_ids), dtype=float)
         for item_index, interaction_weight in zip(history.indices, history.data):
             similarities = self._item_similarities(int(item_index))
             neighbors = self._neighbor_indices(similarities)

@@ -68,31 +68,6 @@ Remaining:
 - Session-aware and sequential recommenders
 - Online evaluation and contextual bandit helpers
 
-## Phase 4: PySpark (foundation completed in 0.9.0)
-
-- Spark session and data-loading helpers
-- Data cleaning and feature engineering
-- Distributed SQL workflows
-- MLlib training and evaluation wrappers
-- Scaling paths for stable M-Ana APIs
-
-Completed foundation:
-
-- Lazy optional PySpark imports and configurable Spark sessions
-- Schema-aware batch and table I/O with partition-aware writes
-- Safe joins, type casting, missing values, unions, lineage, and deduplication
-- Schema, duplicate-key, null, partition, and plan diagnostics
-- Mixed-feature Spark ML pipelines and reproducible splitting
-- Checkpointed Structured Streaming helpers
-- Bounded local batching, chunked CSV ingestion, and threaded I/O
-
-Remaining:
-
-- Kafka-specific source and sink recipes
-- Delta Lake and Apache Iceberg adapters
-- Watermark, state-store, and streaming-observability helpers
-- Cluster sizing and partition-tuning diagnostics
-
 ## Definition of done for each module
 
 - Importable from a documented public namespace

@@ -44,7 +44,7 @@ def line(df, x_col, y_col, title='', x_title='', y_title='', color='blue', width
         fig.write_html(filepath)
 
 
-def scatter(df, x_col, y_col, color_col=None, size_col=None, title=None, x_title=None, y_title=None, width=None, height=None, template='plotly_white', mode='markers', symbol='circle', opacity=0.7, marker=None, filename=None, auto_open=True):
+def scatter(df, x_col, y_col, color_col=None, size_col=None, title=None, x_title=None, y_title=None, width=None, height=None, template='plotly_white', mode='markers', symbol='circle', opacity=0.7, marker=None, filename=None, auto_open=True) -> object:
     """
     Outputs a scatter plot based on data from a data frame using plotly.
 
@@ -68,15 +68,36 @@ def scatter(df, x_col, y_col, color_col=None, size_col=None, title=None, x_title
         auto_open (bool, optional): Whether to automatically open the plot in a new browser tab.
 
     Returns:
-        fig: The plotly figure object.
+        object: The Plotly figure object.
     """
     import os
     import plotly.express as px
 
-    fig = px.scatter(df, x=x_col, y=y_col, color=color_col, size=size_col, title=title,
-                     labels={x_col:x_title, y_col:y_title}, width=width, height=height,
-                     template=template, symbol=symbol, opacity=opacity, marker=marker,
-                     mode=mode, trendline='ols')
+    labels = {}
+    if x_title is not None:
+        labels[x_col] = x_title
+    if y_title is not None:
+        labels[y_col] = y_title
+
+    fig = px.scatter(
+        df,
+        x=x_col,
+        y=y_col,
+        color=color_col,
+        size=size_col,
+        title=title,
+        labels=labels,
+        width=width,
+        height=height,
+        template=template,
+        opacity=opacity,
+        trendline="ols",
+        trendline_color_override="red",
+    )
+
+    fig.update_traces(mode=mode, marker_symbol=symbol)
+    if marker:
+        fig.update_traces(marker=marker)
 
     if filename:
         if not filename.endswith('.html'):
@@ -159,9 +180,9 @@ def dist(df,col,lenght = 4, filename=None, auto_open = False, **kwargs):
     fig = make_subplots(rows=1, cols=1) # then creates a subplot and..
 
     fig.add_trace(go.Histogram(x=df[col], name=col)) # give it a histogram plot that shows the distripution,
-    fig.add_trace(go.Line(x=[df[col].mean() for i in range(round(vertical_length))], y=list(range(round(vertical_length))), name=f'{col}\'s mean')) # a virtical line that shows where the mean is,
-    fig.add_trace(go.Line(x=[df[col].median() for i in range(round(vertical_length))], y=list(range(round(vertical_length))), name=f'{col}\'s median')) # a virtical line that shows where the median is and
-    fig.add_trace(go.Line(x=[df[col].mode()[0] for i in range(round(vertical_length))], y=list(range(round(vertical_length))), name=f'{col}\'s mode')) # a virtical line that shows where the mode is.
+    fig.add_trace(go.Scatter(x=[df[col].mean() for i in range(round(vertical_length))], y=list(range(round(vertical_length))), mode='lines', name=f'{col}\'s mean')) # a virtical line that shows where the mean is,
+    fig.add_trace(go.Scatter(x=[df[col].median() for i in range(round(vertical_length))], y=list(range(round(vertical_length))), mode='lines', name=f'{col}\'s median')) # a virtical line that shows where the median is and
+    fig.add_trace(go.Scatter(x=[df[col].mode()[0] for i in range(round(vertical_length))], y=list(range(round(vertical_length))), mode='lines', name=f'{col}\'s mode')) # a virtical line that shows where the mode is.
     fig.update_layout(**kwargs)
 
     if filename:
@@ -194,20 +215,14 @@ def plot_box(df, x_col, y_col, title='', x_title='', y_title='', color='blue', w
     Returns:
     None
     """
-    import os
     import plotly.graph_objs as go
-
-    download_path=os.getcwd()
 
     fig = go.Figure()
     fig.add_trace(go.Box(x=df[x_col], y=df[y_col], marker_color=color, name=y_col))
     fig.update_layout(title=title, xaxis_title=x_title, yaxis_title=y_title, width=width, height=height, showlegend=show_legend)
     fig.show()
 
-    # Save the plot as a PNG file in the specified path
-    filename = f"{y_col}_box_plot.png"
-    filepath = os.path.join(download_path, filename)
-    fig.write_image(filepath)
+    return fig
 
 
 def heatmap(df, figsize=(15, 15), cmap = "Greens",linewidths=0.1, annot_kws={"fontsize":10}):
@@ -235,7 +250,7 @@ def heatmap(df, figsize=(15, 15), cmap = "Greens",linewidths=0.1, annot_kws={"fo
     return sns.heatmap(df.corr(), annot=True, cmap=cmap, linewidths=linewidths, annot_kws=annot_kws)
 
 
-def pairplot(df, color=None, size=None):
+def pairplot(df, color=None, size=None, show=True):
     """
     A function to plot a pair plot for a given dataframe.
 
@@ -243,14 +258,18 @@ def pairplot(df, color=None, size=None):
     -----------
     df : pandas.DataFrame
         The input dataframe to plot the pair plot for.
-    color : str or None, optional (default=None)
-        A column name of df to use for color encoding the scatter plot matrix.
-    size : str or None, optional (default=None)
-        A column name of df to use for size encoding the scatter plot matrix.
+    color : str, array-like, or None, optional (default=None)
+        A column name or array-like values to use for color encoding the scatter plot matrix.
+    size : str, number, or None, optional (default=None)
+        A column name of df to use for size encoding the scatter plot matrix,
+        or a fixed marker size such as 20.
+    show : bool, optional (default=True)
+        Whether to display the figure immediately.
 
     Returns:
     --------
-    None
+    plotly.graph_objs.Figure
+        The scatter matrix figure.
 
     Example:
     --------
@@ -258,14 +277,53 @@ def pairplot(df, color=None, size=None):
     >>> from sklearn.datasets import load_iris
     >>> iris = load_iris()
     >>> df = pd.DataFrame(data=iris.data, columns=iris.feature_names)
-    >>> pairplot(df, color=iris.target, size=iris.target)
+    >>> df["species"] = iris.target
+    >>> pairplot(df, color="species", size=20)
     """
 
     import plotly.express as px
 
-    fig = px.scatter_matrix(df, color=color, size=size)
+    fig = px.scatter_matrix(df, color=color)
     fig.update_traces(diagonal_visible=False)
-    fig.show()
+    fig.update_layout(width=size, height=size)
+    if show:
+        fig.show()
+    return fig
+
+def pairplot_seaborn(df, hue=None, kind = 'scatter', diag_kind='hist', palette=None, **kwargs):
+    """
+    A function to plot a pair plot for a given dataframe using seaborn.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        The input dataframe to plot the pair plot for.
+    hue : str, optional (default=None)
+        A column name of df to use for color encoding the scatter plot matrix.
+    diag_kind : str, optional (default='hist')
+        The type of plot to use on the diagonal. Options are 'hist' or 'kde'.
+    palette : dict or seaborn color palette, optional (default=None)
+        A dictionary mapping hue levels to colors, or a seaborn color palette.
+    **kwargs : additional keyword arguments
+        Additional keyword arguments to pass to seaborn.pairplot().
+
+    Returns:
+    --------
+    seaborn.axisgrid.PairGrid
+        The pair plot object.
+
+    Example:
+    --------
+    >>> import pandas as pd
+    >>> from sklearn.datasets import load_iris
+    >>> iris = load_iris()
+    >>> df = pd.DataFrame(data=iris.data, columns=iris.feature_names)
+    >>> df["species"] = iris.target
+    >>> pairplot_seaborn(df, hue="species", diag_kind='kde', palette='Set2')
+    """
+    import seaborn as sns
+
+    return sns.pairplot(df, hue=hue, kind = kind, diag_kind=diag_kind, palette=palette, **kwargs)
 
 
 def area_plot(df, x_col, y_col, title=None, x_title=None, y_title=None, color=None, filename=None):
@@ -294,7 +352,7 @@ def area_plot(df, x_col, y_col, title=None, x_title=None, y_title=None, color=No
     fig.show()
 
 
-def sunburst(df, hierarchy_cols, size_col, color_col=None, title=None, width=800, height=800, font_size=14, colorscale='YlOrRd', download_path=None):
+def sunburst(df, hierarchy_cols, size_col, color_col=None, title=None, width=800, height=800, font_size=14, colorscale='YlOrRd', download_path=None, show=True):
     """
     Create a sunburst graph using Plotly based on data from a data frame.
 
@@ -313,58 +371,27 @@ def sunburst(df, hierarchy_cols, size_col, color_col=None, title=None, width=800
     Returns:
     - fig: Plotly figure object for the sunburst graph.
     """
-    # Create a list of values for each hierarchy level
-    import plotly.graph_objs as go
+    import plotly.express as px
 
-    hierarchy_values = []
-    for i in range(len(hierarchy_cols)):
-        hierarchy_values.append(df[hierarchy_cols[i]].unique().tolist())
+    fig = px.sunburst(
+        df,
+        path=hierarchy_cols,
+        values=size_col,
+        color=color_col,
+        color_continuous_scale=colorscale if color_col is not None else None,
+        title=title,
+    )
 
-    # Create a Plotly sunburst graph
-    fig = go.Figure(go.Sunburst(
-        labels=df[hierarchy_cols[-1]],
-        parents=df[hierarchy_cols[-2]],
-        values=df[size_col],
-        branchvalues='total',
-        marker=dict(
-            colors=df[color_col] if color_col is not None else None,
-            colorscale=colorscale
-        ),
-        textfont=dict(
-            size=font_size
-        ),
-        insidetextorientation='radial',
-        maxdepth=len(hierarchy_cols)-1
-    ))
-
-    # Set the colorbar title
-    if color_col is not None:
-        fig.update_layout(coloraxis_colorbar=dict(
-            title=color_col.capitalize(),
-            title_font=dict(
-                size=font_size
-            ),
-            ticksuffix=' '
-        ))
-
-    # Set the sunburst graph title
-    if title is not None:
-        fig.update_layout(title={
-            'text': title,
-            'font': {
-                'size': font_size
-            }
-        })
-
-    # Set the sunburst graph dimensions
-    fig.update_layout(width=width, height=height)
+    fig.update_layout(width=width, height=height, font=dict(size=font_size))
 
     # Download the sunburst graph as an HTML file
     if download_path is not None:
         fig.write_html(download_path)
 
-    # Show the sunburst graph
-    fig.show()
+    if show:
+        fig.show()
+
+    return fig
 
 
 def pie_plot(df, values_column, names_column, title='Pie Chart', width=800, height=600, filename='pie_chart.html',auto_open=False):
@@ -398,7 +425,8 @@ def sankey(df, source_col, target_col, value_col,
            title='Sankey Diagram',
            color_col=None,
            width=1000, height=600,
-           filename=None, auto_open=False):
+           filename=None, auto_open=False,
+           show=True):
     """
     Create a Sankey diagram to visualize flows between categories.
 
@@ -502,7 +530,8 @@ def sankey(df, source_col, target_col, value_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -511,7 +540,8 @@ def treemap(df, path_cols, value_col,
             title='Treemap',
             colorscale='Blues',
             width=1000, height=600,
-            filename=None, auto_open=False):
+            filename=None, auto_open=False,
+            show=True):
     """
     Create a treemap for hierarchical data visualization.
 
@@ -595,7 +625,8 @@ def treemap(df, path_cols, value_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -606,7 +637,8 @@ def violin(df, x_col=None, y_col=None,
            meanline_visible=True,
            width=800, height=600,
            template='plotly_white',
-           filename=None, auto_open=False):
+           filename=None, auto_open=False,
+           show=True):
     """
     Create violin plots for comparing distributions across categories.
 
@@ -693,7 +725,8 @@ def violin(df, x_col=None, y_col=None,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -703,7 +736,8 @@ def scatter_3d(df, x_col, y_col, z_col,
                hover_data=None,
                width=900, height=700,
                template='plotly_white',
-               filename=None, auto_open=False):
+               filename=None, auto_open=False,
+               show=True):
     """
     Create 3D scatter plot for multi-dimensional data exploration.
 
@@ -794,7 +828,8 @@ def scatter_3d(df, x_col, y_col, z_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -806,7 +841,8 @@ def animated_scatter(df, x_col, y_col,
                     hover_name=None,
                     width=900, height=600,
                     template='plotly_white',
-                    filename=None, auto_open=False):
+                    filename=None, auto_open=False,
+                    show=True):
     """
     Create animated scatter plot to show evolution over time or parameter changes.
 
@@ -905,7 +941,8 @@ def animated_scatter(df, x_col, y_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -916,7 +953,8 @@ def animated_line(df, x_col, y_col,
                  range_x=None, range_y=None,
                  width=900, height=600,
                  template='plotly_white',
-                 filename=None, auto_open=False):
+                 filename=None, auto_open=False,
+                 show=True):
     """
     Create animated line plot to show time-series evolution.
 
@@ -994,7 +1032,8 @@ def animated_line(df, x_col, y_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -1002,7 +1041,8 @@ def funnel_chart(df, stage_col, value_col,
                 title='Funnel Chart',
                 color_col=None,
                 width=800, height=600,
-                filename=None, auto_open=False):
+                filename=None, auto_open=False,
+                show=True):
     """
     Create funnel chart to visualize conversion processes.
 
@@ -1090,7 +1130,8 @@ def funnel_chart(df, stage_col, value_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
@@ -1098,7 +1139,8 @@ def waterfall_chart(df, category_col, value_col,
                    title='Waterfall Chart',
                    measure=None,
                    width=900, height=600,
-                   filename=None, auto_open=False):
+                   filename=None, auto_open=False,
+                   show=True):
     """
     Create waterfall chart to show cumulative effect of sequential values.
 
@@ -1188,15 +1230,30 @@ def waterfall_chart(df, category_col, value_col,
         filepath = os.path.join(os.getcwd(), filename)
         fig.write_html(filepath, auto_open=auto_open)
 
-    fig.show()
+    if show:
+        fig.show()
     return fig
 
 
 # ==================== DASHBOARD TEMPLATE ====================
 
+def _run_dash_app(app, host, port, debug):
+    """Run a Dash app across old and new Dash versions."""
+    runner = getattr(app, 'run', None) or getattr(app, 'run_server', None)
+    if runner is None:
+        raise AttributeError("Dash app does not expose run() or run_server().")
+
+    try:
+        return runner(host=host, port=port, debug=debug)
+    except TypeError:
+        return runner(port=port, debug=debug)
+
+
 def create_dashboard_template(title='Data Analysis Dashboard',
                              port=8050,
-                             debug=True):
+                             debug=True,
+                             run=False,
+                             host='127.0.0.1'):
     """
     Create a basic Plotly Dash dashboard template.
 
@@ -1210,6 +1267,11 @@ def create_dashboard_template(title='Data Analysis Dashboard',
         Port to run the dashboard on.
     debug : bool, optional
         Run in debug mode.
+    run : bool, optional
+        Start the Dash server immediately. This blocks the current cell/process
+        until the server is stopped.
+    host : str, optional
+        Host interface used when run=True.
 
     Returns:
     --------
@@ -1227,7 +1289,10 @@ def create_dashboard_template(title='Data Analysis Dashboard',
     ...     dcc.Graph(id='my-graph', figure=my_figure)
     ... ])
     >>>
-    >>> app.run_server(port=8050)
+    >>> app.run(port=8050)
+
+    >>> # Or start the server immediately
+    >>> app = create_dashboard_template('Sales Dashboard', run=True)
 
     >>> # Full example with callbacks
     >>> app = create_dashboard_template('Interactive Dashboard')
@@ -1251,7 +1316,7 @@ def create_dashboard_template(title='Data Analysis Dashboard',
     ...     fig = px.bar(filtered_df, x='product', y='sales')
     ...     return fig
     >>>
-    >>> app.run_server(port=8050)
+    >>> app.run(port=8050)
     """
     try:
         from dash import Dash, html
@@ -1277,8 +1342,12 @@ def create_dashboard_template(title='Data Analysis Dashboard',
         ], style={'padding': '20px'})
     ])
 
-    print(f"Dashboard template created. Run with: app.run_server(port={port})")
+    print(f"Dashboard template created. Run with: app.run(port={port})")
     print(f"Access at: http://127.0.0.1:{port}/")
+
+    if run:
+        print(f"Starting dashboard at: http://{host}:{port}/")
+        _run_dash_app(app, host=host, port=port, debug=debug)
 
     return app
 
@@ -1286,7 +1355,10 @@ def create_dashboard_template(title='Data Analysis Dashboard',
 def quick_dashboard(df, title='Quick Dashboard',
                    numerical_cols=None,
                    categorical_cols=None,
-                   port=8050):
+                   port=8050,
+                   run=False,
+                   debug=True,
+                   host='127.0.0.1'):
     """
     Create a quick interactive dashboard from a DataFrame with automatic visualizations.
 
@@ -1309,6 +1381,13 @@ def quick_dashboard(df, title='Quick Dashboard',
         Categorical columns to include (auto-detected if None).
     port : int, optional
         Port to run the dashboard on.
+    run : bool, optional
+        Start the Dash server immediately. This blocks the current cell/process
+        until the server is stopped.
+    debug : bool, optional
+        Run in debug mode when run=True.
+    host : str, optional
+        Host interface used when run=True.
 
     Returns:
     --------
@@ -1319,7 +1398,10 @@ def quick_dashboard(df, title='Quick Dashboard',
     ---------
     >>> # Quick dashboard from any DataFrame
     >>> app = quick_dashboard(df, title='Sales Analysis Dashboard')
-    >>> app.run_server(port=8050)
+    >>> app.run(port=8050)
+
+    >>> # Or start it immediately
+    >>> app = quick_dashboard(df, title='Sales Analysis Dashboard', run=True)
 
     >>> # With specific columns
     >>> app = quick_dashboard(
@@ -1328,7 +1410,7 @@ def quick_dashboard(df, title='Quick Dashboard',
     ...     numerical_cols=['price', 'sales', 'profit'],
     ...     categorical_cols=['category', 'region']
     ... )
-    >>> app.run_server(debug=True)
+    >>> app.run(debug=True)
     """
     try:
         from dash import Dash, html, dcc, Input, Output
@@ -1488,5 +1570,8 @@ def quick_dashboard(df, title='Quick Dashboard',
     print(f"Access at: http://127.0.0.1:{port}/")
     print("Press Ctrl+C to stop the server")
     print(f"{'='*60}\n")
+
+    if run:
+        _run_dash_app(app, host=host, port=port, debug=debug)
 
     return app

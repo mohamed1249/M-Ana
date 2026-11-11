@@ -1,11 +1,50 @@
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+
+
+def _make_hashable(value: Any) -> Any:
+    """Return a stable, hashable representation of nested cell values."""
+    if isinstance(value, dict):
+        items = (
+            (_make_hashable(key), _make_hashable(item))
+            for key, item in value.items()
+        )
+        return tuple(sorted(items, key=repr))
+    if isinstance(value, np.ndarray):
+        return tuple(_make_hashable(item) for item in value.tolist())
+    if isinstance(value, (list, tuple)):
+        return tuple(_make_hashable(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return tuple(sorted((_make_hashable(item) for item in value), key=repr))
+
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
+
+
+def _comparable_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Copy a frame and normalize unhashable object cells for comparisons."""
+    comparable = df.copy()
+    for column in comparable.select_dtypes(include=["object"]).columns:
+        comparable[column] = comparable[column].map(_make_hashable)
+    return comparable
+
+
+def _safe_nunique(series: pd.Series) -> int:
+    """Count unique values even when an object series contains nested values."""
+    if pd.api.types.is_object_dtype(series.dtype):
+        series = series.map(_make_hashable)
+    return int(series.nunique(dropna=True))
+
 
 def drop_missing_values(df, threshold=0.5, axis=0, subset=None) -> pd.DataFrame:
     """
@@ -350,7 +389,11 @@ def remove_outliers(df, method='zscore', **kwargs) -> pd.DataFrame:
 
 
 
-def group_and_aggregate(df, group_cols, agg_dict):
+def group_and_aggregate(
+    df: pd.DataFrame,
+    group_cols: List[str],
+    agg_dict: Dict[str, Any],
+) -> pd.DataFrame:
     """
     Group and aggregate data in a dataframe.
 
@@ -728,28 +771,6 @@ def smart_clean(df, column=None, return_report=True):
         return_report=return_report
     )
 
-def pivot_data(df, index_col, columns_col, values_col):
-    """
-    Pivot and reshape data in a pandas DataFrame based on specified columns.
-
-    Args:
-        df (pandas.DataFrame): The DataFrame to pivot.
-        index_col (str or list of str): The column(s) to use as the index in the pivoted table.
-        columns_col (str): The column to use as the column headers in the pivoted table.
-        values_col (str): The column to use as the values in the pivoted table.
-
-    Returns:
-        pandas.DataFrame: The pivoted and reshaped DataFrame.
-    """
-    import pandas as pd
-    # Pivot the data based on the specified columns
-    pivoted_df = pd.pivot_table(df, index=index_col, columns=columns_col, values=values_col)
-
-    # Reset the index so the pivot table is a DataFrame
-    pivoted_df = pivoted_df.reset_index()
-
-    return pivoted_df
-
 
 
 @dataclass
@@ -783,9 +804,20 @@ class CleaningReport:
 
     # Processing time
     processing_time: float = 0.0
+    _refresh_callback: Optional[Callable[[], None]] = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def _refresh(self) -> None:
+        """Refresh live metrics when this report belongs to a DataCleaner."""
+        if self._refresh_callback is not None:
+            self._refresh_callback()
 
     def to_dict(self) -> Dict:
         """Convert report to dictionary."""
+        self._refresh()
         return {
             'timestamp': self.timestamp,
             'original_shape': self.original_shape,
@@ -818,6 +850,7 @@ class CleaningReport:
 
     def summary(self) -> str:
         """Generate human-readable summary."""
+        self._refresh()
         summary = f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║              DATA CLEANING REPORT                            ║
@@ -948,11 +981,12 @@ class DataCleaner:
         log_file : str, optional
             Path to save detailed logs.
         """
+        self._started_at = time.perf_counter()
         self.df_original = df.copy()
         self.df = df.copy()
         self.target_column = target_column
         self.id_columns = id_columns or []
-        self.drop_columns = drop_columns or []
+        self.columns_to_drop = drop_columns or []
         self.missing_threshold = missing_threshold
         self.outlier_threshold = outlier_threshold
         self.verbose = verbose
@@ -962,6 +996,7 @@ class DataCleaner:
             original_shape=df.shape,
             data_quality_before=self._calculate_data_quality(df)
         )
+        self.report._refresh_callback = self._refresh_report
 
         # Setup logging
         self.logger = self._setup_logger(log_file)
@@ -974,6 +1009,9 @@ class DataCleaner:
 
         # Pipeline tracking for reproducibility
         self.pipeline_steps = []
+        self.scalers = {}
+        self.encoders = {}
+        self._fitted_transforms = []
 
         # Auto-detect column types if not specified
         if not all([categorical_columns, numerical_columns]):
@@ -1023,16 +1061,24 @@ class DataCleaner:
         elif level == 'debug':
             self.logger.debug(message)
 
+    def _refresh_report(self) -> None:
+        """Synchronize report totals with the cleaner's current DataFrame."""
+        self.report.final_shape = self.df.shape
+        self.report.data_quality_after = self._calculate_data_quality(self.df)
+        if self.report.processing_time == 0.0:
+            self.report.processing_time = time.perf_counter() - self._started_at
+
     def _calculate_data_quality(self, df: pd.DataFrame) -> Dict[str, float]:
         """Calculate data quality metrics."""
         total_cells = df.shape[0] * df.shape[1]
         missing_cells = df.isnull().sum().sum()
+        unique_rows = _comparable_frame(df).drop_duplicates().shape[0]
 
         return {
             'completeness': 1 - (missing_cells / total_cells) if total_cells > 0 else 0,
             'validity': 1.0,  # Will be updated during validation
             'consistency': 1.0,  # Will be updated during cleaning
-            'uniqueness': df.drop_duplicates().shape[0] / df.shape[0] if df.shape[0] > 0 else 1.0
+            'uniqueness': unique_rows / df.shape[0] if df.shape[0] > 0 else 1.0
         }
 
     def _auto_detect_column_types(self):
@@ -1051,11 +1097,13 @@ class DataCleaner:
 
         if self.categorical_columns is None:
             self.categorical_columns = []
-            for col in self.df.select_dtypes(include=['object', 'category']).columns:
+            for col in self.df.select_dtypes(
+                include=['object', 'string', 'category']
+            ).columns:
                 if col in self.id_columns or col == self.target_column:
                     continue
                 # Consider as categorical if unique values < 50% of total rows
-                unique_ratio = self.df[col].nunique() / len(self.df)
+                unique_ratio = _safe_nunique(self.df[col]) / len(self.df)
                 if unique_ratio < 0.5:
                     self.categorical_columns.append(col)
                 elif self.text_columns is None:
@@ -1120,6 +1168,22 @@ class DataCleaner:
             new_columns.append(new_col)
 
         self.df.columns = new_columns
+        rename_map = dict(zip(original_columns, new_columns))
+        self.target_column = rename_map.get(self.target_column, self.target_column)
+        self.id_columns = [rename_map.get(col, col) for col in self.id_columns]
+        self.columns_to_drop = [rename_map.get(col, col) for col in self.columns_to_drop]
+        if self.categorical_columns:
+            self.categorical_columns = [
+                rename_map.get(col, col) for col in self.categorical_columns
+            ]
+        if self.numerical_columns:
+            self.numerical_columns = [
+                rename_map.get(col, col) for col in self.numerical_columns
+            ]
+        if self.date_columns:
+            self.date_columns = [rename_map.get(col, col) for col in self.date_columns]
+        if self.text_columns:
+            self.text_columns = [rename_map.get(col, col) for col in self.text_columns]
         self._log(f"Renamed {len([i for i, (o, n) in enumerate(zip(original_columns, new_columns)) if o != n])} columns")
 
         self.pipeline_steps.append({
@@ -1127,6 +1191,53 @@ class DataCleaner:
             'params': {'lowercase': lowercase, 'remove_special': remove_special, 'snake_case': snake_case}
         })
 
+        return self
+
+    def rename_columns(self, mapping: Dict[str, str]) -> 'DataCleaner':
+        """Rename columns while keeping DataCleaner metadata synchronized.
+
+        Parameters:
+        -----------
+        mapping : dict
+            Mapping from existing names to new names. Missing source columns are
+            ignored, matching pandas ``DataFrame.rename`` behavior.
+        """
+        if not isinstance(mapping, dict):
+            raise TypeError("mapping must be a dictionary")
+
+        effective_mapping = {
+            old: new for old, new in mapping.items() if old in self.df.columns
+        }
+        renamed_columns = [effective_mapping.get(col, col) for col in self.df.columns]
+        if len(set(renamed_columns)) != len(renamed_columns):
+            raise ValueError("Column mapping would create duplicate column names")
+
+        self.df = self.df.rename(columns=effective_mapping)
+        self.target_column = effective_mapping.get(self.target_column, self.target_column)
+        self.id_columns = [effective_mapping.get(col, col) for col in self.id_columns]
+        self.columns_to_drop = [
+            effective_mapping.get(col, col) for col in self.columns_to_drop
+        ]
+        for attribute in (
+            'categorical_columns',
+            'numerical_columns',
+            'date_columns',
+            'text_columns',
+        ):
+            values = getattr(self, attribute)
+            if values:
+                setattr(
+                    self,
+                    attribute,
+                    [effective_mapping.get(col, col) for col in values],
+                )
+
+        changed = sum(old != new for old, new in effective_mapping.items())
+        self._log(f"Renamed {changed} columns")
+        self.pipeline_steps.append({
+            'step': 'rename_columns',
+            'params': {'mapping': mapping}
+        })
         return self
 
     def drop_columns(self, columns: Optional[List[str]] = None,
@@ -1146,8 +1257,9 @@ class DataCleaner:
         to_drop = set()
 
         # Drop specified columns
-        if columns:
-            to_drop.update([col for col in columns if col in self.df.columns])
+        explicit_columns = self.columns_to_drop if columns is None else columns
+        if explicit_columns:
+            to_drop.update([col for col in explicit_columns if col in self.df.columns])
 
         # Drop columns with too many missing values
         threshold = missing_threshold or self.missing_threshold
@@ -1175,6 +1287,63 @@ class DataCleaner:
 
         return self
 
+    def drop_missing_rows(
+        self,
+        subset: Optional[List[str]] = None,
+        how: str = 'any',
+        min_non_null: Optional[int] = None,
+        treat_blank_as_missing: bool = False,
+    ) -> 'DataCleaner':
+        """Drop rows missing required values, optionally treating blanks as nulls.
+
+        Parameters:
+        -----------
+        subset : list, optional
+            Columns used to determine whether a row is missing.
+        how : {'any', 'all'}
+            Drop a row when any or all selected values are missing.
+        min_non_null : int, optional
+            Keep rows with at least this many non-null selected values. Cannot
+            be combined with a non-default ``how`` value.
+        treat_blank_as_missing : bool
+            Treat empty or whitespace-only strings as missing before filtering.
+        """
+        if how not in {'any', 'all'}:
+            raise ValueError("how must be 'any' or 'all'")
+        if min_non_null is not None and how != 'any':
+            raise ValueError("min_non_null cannot be combined with how='all'")
+        selected = list(subset) if subset is not None else list(self.df.columns)
+        missing_columns = [col for col in selected if col not in self.df.columns]
+        if missing_columns:
+            raise KeyError(f"Columns not found: {missing_columns}")
+
+        if treat_blank_as_missing:
+            for col in selected:
+                if pd.api.types.is_object_dtype(self.df[col]) or pd.api.types.is_string_dtype(self.df[col]):
+                    blank_mask = self.df[col].astype('string').str.strip().eq('')
+                    self.df.loc[blank_mask.fillna(False), col] = pd.NA
+
+        before_count = len(self.df)
+        if min_non_null is not None:
+            if min_non_null < 0 or min_non_null > len(selected):
+                raise ValueError("min_non_null must be between 0 and the number of selected columns")
+            self.df = self.df.dropna(subset=selected, thresh=min_non_null)
+        else:
+            self.df = self.df.dropna(subset=selected, how=how)
+        removed = before_count - len(self.df)
+        self.report.rows_removed += removed
+        self._log(f"Removed {removed} rows with missing required values")
+        self.pipeline_steps.append({
+            'step': 'drop_missing_rows',
+            'params': {
+                'subset': subset,
+                'how': how,
+                'min_non_null': min_non_null,
+                'treat_blank_as_missing': treat_blank_as_missing,
+            }
+        })
+        return self
+
     # ==================== MISSING VALUES ====================
 
     def fix_missing_values(self,
@@ -1198,8 +1367,8 @@ class DataCleaner:
         """
         self._log(f"Fixing missing values with strategy: {strategy}...")
 
+        from sklearn.experimental import enable_iterative_imputer  # noqa: F401
         from sklearn.impute import KNNImputer, IterativeImputer
-
         missing_before = self.df.isnull().sum().sum()
 
         if fill_value is not None:
@@ -1423,7 +1592,11 @@ class DataCleaner:
         self._log("Removing duplicates...")
 
         before_count = len(self.df)
-        self.df = self.df.drop_duplicates(subset=subset, keep=keep)
+        duplicate_mask = _comparable_frame(self.df).duplicated(
+            subset=subset,
+            keep=keep,
+        )
+        self.df = self.df.loc[~duplicate_mask].copy()
         after_count = len(self.df)
 
         duplicates_removed = before_count - after_count
@@ -1527,6 +1700,48 @@ class DataCleaner:
 
     # ==================== DATA TYPE CONVERSION ====================
 
+    def coerce_numeric(
+        self,
+        columns: List[str],
+        fill_value: Any = None,
+        downcast: Optional[str] = None,
+        errors: str = 'coerce',
+    ) -> 'DataCleaner':
+        """Convert selected columns with ``pandas.to_numeric`` semantics."""
+        if errors not in {'raise', 'coerce'}:
+            raise ValueError("errors must be 'raise' or 'coerce'")
+        missing_columns = [col for col in columns if col not in self.df.columns]
+        if missing_columns:
+            raise KeyError(f"Columns not found: {missing_columns}")
+
+        for col in columns:
+            original_dtype = str(self.df[col].dtype)
+            self.df[col] = pd.to_numeric(
+                self.df[col],
+                errors=errors,
+                downcast=downcast,
+            )
+            if isinstance(fill_value, dict):
+                if col in fill_value:
+                    self.df[col] = self.df[col].fillna(fill_value[col])
+            elif fill_value is not None:
+                self.df[col] = self.df[col].fillna(fill_value)
+            new_dtype = str(self.df[col].dtype)
+            if original_dtype != new_dtype:
+                self.report.data_types_changed[col] = (original_dtype, new_dtype)
+
+        self._log(f"Coerced {len(columns)} columns to numeric values")
+        self.pipeline_steps.append({
+            'step': 'coerce_numeric',
+            'params': {
+                'columns': columns,
+                'fill_value': fill_value,
+                'downcast': downcast,
+                'errors': errors,
+            }
+        })
+        return self
+
     def convert_data_types(self, auto_convert: bool = True,
                           conversions: Optional[Dict[str, str]] = None) -> 'DataCleaner':
         """
@@ -1570,7 +1785,7 @@ class DataCleaner:
                 original_dtype = str(self.df[col].dtype)
                 if self.df[col].dtype == 'object':
                     # Convert to category if cardinality is low
-                    if self.df[col].nunique() / len(self.df) < 0.5:
+                    if _safe_nunique(self.df[col]) / len(self.df) < 0.5:
                         self.df[col] = self.df[col].astype('category')
                         new_dtype = 'category'
                         self.report.data_types_changed[col] = (original_dtype, new_dtype)
@@ -1599,9 +1814,14 @@ class DataCleaner:
 
     # ==================== DATE HANDLING ====================
 
-    def parse_dates(self,
-                   columns: Optional[List[str]] = None,
-                   extract_features: bool = True) -> 'DataCleaner':
+    def parse_dates(
+        self,
+        columns: Optional[List[str]] = None,
+        extract_features: bool = True,
+        date_format: Optional[Union[str, Dict[str, str]]] = None,
+        utc: Union[bool, Dict[str, bool]] = False,
+        errors: str = 'coerce',
+    ) -> 'DataCleaner':
         """
         Parse date columns and extract features.
 
@@ -1611,6 +1831,12 @@ class DataCleaner:
             Date columns to parse (auto-detected if None).
         extract_features : bool
             Extract year, month, day, etc. as separate columns.
+        date_format : str or dict, optional
+            One format for all columns or a mapping of column to format.
+        utc : bool or dict
+            Parse all columns as UTC or configure UTC per column.
+        errors : {'raise', 'coerce'}
+            Invalid parsing behavior.
         """
         self._log("Parsing date columns...")
 
@@ -1621,7 +1847,18 @@ class DataCleaner:
                 continue
 
             try:
-                self.df[col] = pd.to_datetime(self.df[col], errors='coerce')
+                column_format = (
+                    date_format.get(col)
+                    if isinstance(date_format, dict)
+                    else date_format
+                )
+                column_utc = utc.get(col, False) if isinstance(utc, dict) else utc
+                self.df[col] = pd.to_datetime(
+                    self.df[col],
+                    errors=errors,
+                    format=column_format,
+                    utc=column_utc,
+                )
                 self._log(f"  {col}: parsed as datetime", 'debug')
 
                 if extract_features:
@@ -1641,7 +1878,13 @@ class DataCleaner:
 
         self.pipeline_steps.append({
             'step': 'parse_dates',
-            'params': {'columns': columns, 'extract_features': extract_features}
+            'params': {
+                'columns': columns,
+                'extract_features': extract_features,
+                'date_format': date_format,
+                'utc': utc,
+                'errors': errors,
+            }
         })
 
         return self
@@ -1669,17 +1912,33 @@ class DataCleaner:
         """
         self._log(f"Encoding categorical variables using {method} method...")
 
-        from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
+        from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, OneHotEncoder
 
         cols_to_encode = columns or self.categorical_columns
+        cols_to_encode = list(cols_to_encode or [])
+        if not cols_to_encode:
+            return self
+        if method not in ('onehot', 'label', 'ordinal', 'target'):
+            raise ValueError(f'Unsupported encoding method: {method}')
+        input_columns = self.df.columns.tolist()
+        original_dtypes = self.df[cols_to_encode].dtypes.to_dict()
+        fitted = {}
 
         if method == 'onehot':
-            # One-hot encoding
-            encoded_df = pd.get_dummies(
-                self.df[cols_to_encode],
-                prefix=cols_to_encode,
-                drop_first=drop_first
+            encoder = OneHotEncoder(
+                drop='first' if drop_first else None,
+                handle_unknown='error',
             )
+            values = encoder.fit_transform(self.df[cols_to_encode]).toarray()
+            new_cols = encoder.get_feature_names_out(cols_to_encode).tolist()
+            if len(set(new_cols)) != len(new_cols) or set(new_cols) & (
+                set(input_columns) - set(cols_to_encode)
+            ):
+                raise ValueError('Encoded feature names collide with existing columns')
+            encoded_df = pd.DataFrame(values, index=self.df.index, columns=new_cols)
+            fitted = {'encoder': encoder, 'output_columns': new_cols}
+            for col in cols_to_encode:
+                self.encoders[col] = encoder
 
             # Drop original columns and add encoded ones
             self.df = self.df.drop(columns=cols_to_encode)
@@ -1696,11 +1955,13 @@ class DataCleaner:
 
         elif method == 'label':
             # Label encoding
-            le = LabelEncoder()
             for col in cols_to_encode:
                 if col not in self.df.columns:
                     continue
-                self.df[col] = le.fit_transform(self.df[col].astype(str))
+                le = LabelEncoder()
+                self.df[col] = le.fit_transform(self.df[col])
+                fitted[col] = le
+                self.encoders[col] = le
                 self.report.encoding_applied[col] = 'label'
                 self._log(f"  {col}: label encoded", 'debug')
 
@@ -1716,6 +1977,8 @@ class DataCleaner:
 
                 # Calculate mean target per category
                 target_means = self.df.groupby(col)[self.target_column].mean()
+                fitted[col] = target_means
+                self.encoders[col] = target_means
                 self.df[f'{col}_target_enc'] = self.df[col].map(target_means)
                 self.report.columns_created.append(f'{col}_target_enc')
                 self.report.encoding_applied[col] = 'target'
@@ -1725,14 +1988,17 @@ class DataCleaner:
             # Ordinal encoding
             categories = kwargs.get('categories', None)
             oe = OrdinalEncoder(categories=categories if categories else 'auto')
-
+            self.df[cols_to_encode] = oe.fit_transform(self.df[cols_to_encode])
+            fitted = {'encoder': oe}
             for col in cols_to_encode:
-                if col not in self.df.columns:
-                    continue
-                self.df[[col]] = oe.fit_transform(self.df[[col]])
+                self.encoders[col] = oe
                 self.report.encoding_applied[col] = 'ordinal'
                 self._log(f"  {col}: ordinal encoded", 'debug')
 
+        self._fitted_transforms.append({
+            'kind': method, 'columns': cols_to_encode, 'objects': fitted,
+            'input_columns': input_columns, 'dtypes': original_dtypes,
+        })
         self.pipeline_steps.append({
             'step': 'encode_categorical',
             'params': {'method': method, 'columns': columns, 'drop_first': drop_first, **kwargs}
@@ -1779,6 +2045,11 @@ class DataCleaner:
             return self
 
         self.df[cols_to_scale] = scaler.fit_transform(self.df[cols_to_scale])
+        for col in cols_to_scale:
+            self.scalers[col] = scaler
+        self._fitted_transforms.append({
+            'kind': 'scale', 'columns': list(cols_to_scale), 'object': scaler,
+        })
 
         for col in cols_to_scale:
             self.report.scaling_applied[col] = method
@@ -1793,6 +2064,101 @@ class DataCleaner:
         return self
 
     # ==================== ALL-IN-ONE CLEANING ====================
+
+    def get_scaler(self, column: str):
+        """Return the latest fitted scaler for a column (possibly shared)."""
+        return self.scalers[column]
+
+    def get_encoder(self, column: str):
+        """Return the latest encoder, or target-encoding mapping, for a column."""
+        return self.encoders[column]
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply learned encodings/scaling without refitting or changing this cleaner.
+
+        Only encoding/scaling pipelines are supported. If cleaning steps were
+        applied, prepare new data separately; their fitted replay is unsupported.
+        Unknown categories raise rather than silently becoming a known category.
+        """
+        unsupported = [s['step'] for s in self.pipeline_steps
+                       if s['step'] not in ('scale_features', 'encode_categorical')]
+        if unsupported:
+            raise ValueError(f'Cannot replay cleaning steps: {unsupported}')
+        result = df.copy()
+        for step in self._fitted_transforms:
+            cols, kind = step['columns'], step['kind']
+            if kind == 'scale':
+                result[cols] = step['object'].transform(result[cols])
+            elif kind == 'onehot':
+                state = step['objects']
+                values = state['encoder'].transform(result[cols]).toarray()
+                encoded = pd.DataFrame(values, index=result.index,
+                                       columns=state['output_columns'])
+                result = pd.concat([result.drop(columns=cols), encoded], axis=1)
+            elif kind == 'ordinal':
+                result[cols] = step['objects']['encoder'].transform(result[cols])
+            elif kind == 'label':
+                for col in cols:
+                    result[col] = step['objects'][col].transform(result[col])
+            elif kind == 'target':
+                for col, mapping in step['objects'].items():
+                    if not result[col].isin(mapping.index).all():
+                        raise ValueError(f'Unknown target-encoding categories in {col}')
+                    result[f'{col}_target_enc'] = result[col].map(mapping)
+        return result
+
+    def inverse_transform(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """Reverse fitted encodings/scaling in reverse order, returning a copy.
+
+        This restores the representation before encoding/scaling, not deleted
+        rows, imputed values, or other irreversible cleaning. Target encoding is
+        explicitly unsupported. Pass a DataFrame with the transformed schema.
+        """
+        if any(s['kind'] == 'target' for s in self._fitted_transforms):
+            raise ValueError('Target encoding is not uniquely invertible')
+        result = self.df.copy() if df is None else df.copy()
+        for step in reversed(self._fitted_transforms):
+            cols, kind = step['columns'], step['kind']
+            if kind == 'scale':
+                result[cols] = step['object'].inverse_transform(result[cols])
+                continue
+            state = step['objects']
+            if kind == 'onehot':
+                values = state['encoder'].inverse_transform(result[state['output_columns']])
+                result = result.drop(columns=state['output_columns'])
+                for i, col in enumerate(cols):
+                    result[col] = values[:, i]
+                extras = [c for c in result.columns if c not in step['input_columns']]
+                result = result[step['input_columns'] + extras]
+            elif kind == 'ordinal':
+                result[cols] = state['encoder'].inverse_transform(result[cols])
+            elif kind == 'label':
+                for col in cols:
+                    values = result[col].to_numpy()
+                    if not np.isfinite(values).all() or not np.equal(values, np.floor(values)).all():
+                        raise ValueError(f'Invalid label codes in {col}')
+                    result[col] = state[col].inverse_transform(values.astype(int))
+            for col, dtype in step['dtypes'].items():
+                result[col] = result[col].astype(dtype)
+        return result
+
+    def save_fitted_pipeline(self, filepath: str) -> None:
+        """Persist this fitted cleaner with joblib, including data and transformers.
+
+        Files contain original/cleaned data; do not share sensitive datasets.
+        """
+        import joblib
+        joblib.dump(self, filepath)
+
+    @classmethod
+    def load_fitted_pipeline(cls, filepath: str) -> 'DataCleaner':
+        """Load a trusted joblib file. Never load untrusted pickle/joblib files."""
+        import joblib
+        cleaner = joblib.load(filepath)
+        if not isinstance(cleaner, cls):
+            raise TypeError('File does not contain a DataCleaner')
+        cleaner._started_at = time.perf_counter()
+        return cleaner
 
     def clean_all(self,
                  missing_strategy: str = 'auto',
@@ -1829,8 +2195,7 @@ class DataCleaner:
         pd.DataFrame
             Cleaned DataFrame.
         """
-        import time
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         self._log("=" * 60)
         self._log("STARTING COMPREHENSIVE DATA CLEANING")
@@ -1875,7 +2240,7 @@ class DataCleaner:
         # Finalize report
         self.report.final_shape = self.df.shape
         self.report.data_quality_after = self._calculate_data_quality(self.df)
-        self.report.processing_time = time.time() - start_time
+        self.report.processing_time = time.perf_counter() - start_time
 
         self._log("=" * 60)
         self._log("CLEANING COMPLETED")
@@ -1890,10 +2255,12 @@ class DataCleaner:
 
     def get_cleaned_data(self) -> pd.DataFrame:
         """Get the cleaned DataFrame."""
+        self._refresh_report()
         return self.df.copy()
 
     def get_report(self) -> CleaningReport:
         """Get the cleaning report."""
+        self._refresh_report()
         return self.report
 
     def profile_data(self) -> Dict[str, Any]:
@@ -1910,17 +2277,18 @@ class DataCleaner:
             'memory_usage_mb': self.df.memory_usage(deep=True).sum() / 1024**2,
             'columns': {},
             'missing_values': {},
-            'duplicates': self.df.duplicated().sum(),
+            'duplicates': int(_comparable_frame(self.df).duplicated().sum()),
             'data_quality': self._calculate_data_quality(self.df)
         }
 
         for col in self.df.columns:
+            unique_count = _safe_nunique(self.df[col])
             col_profile = {
                 'dtype': str(self.df[col].dtype),
                 'missing': self.df[col].isnull().sum(),
                 'missing_percent': self.df[col].isnull().sum() / len(self.df) * 100,
-                'unique': self.df[col].nunique(),
-                'unique_percent': self.df[col].nunique() / len(self.df) * 100
+                'unique': unique_count,
+                'unique_percent': unique_count / len(self.df) * 100
             }
 
             if pd.api.types.is_numeric_dtype(self.df[col]):
@@ -1977,7 +2345,7 @@ class DataCleaner:
 
     def apply_pipeline(self) -> pd.DataFrame:
         """Apply saved pipeline steps."""
-        for step_config in self.pipeline_steps:
+        for step_config in list(self.pipeline_steps):
             step = step_config['step']
             params = step_config['params']
 
@@ -1989,12 +2357,17 @@ class DataCleaner:
 
     def reset(self):
         """Reset to original DataFrame."""
+        self._started_at = time.perf_counter()
         self.df = self.df_original.copy()
         self.report = CleaningReport(
             original_shape=self.df_original.shape,
             data_quality_before=self._calculate_data_quality(self.df_original)
         )
+        self.report._refresh_callback = self._refresh_report
         self.pipeline_steps = []
+        self.scalers = {}
+        self.encoders = {}
+        self._fitted_transforms = []
         self._log("Reset to original DataFrame")
 
     def compare_with_original(self) -> pd.DataFrame:
@@ -2011,14 +2384,14 @@ class DataCleaner:
                 self.df_original.shape[0],
                 self.df_original.shape[1],
                 self.df_original.isnull().sum().sum(),
-                self.df_original.duplicated().sum(),
+                _comparable_frame(self.df_original).duplicated().sum(),
                 self.df_original.memory_usage(deep=True).sum() / 1024**2
             ],
             'Cleaned': [
                 self.df.shape[0],
                 self.df.shape[1],
                 self.df.isnull().sum().sum(),
-                self.df.duplicated().sum(),
+                _comparable_frame(self.df).duplicated().sum(),
                 self.df.memory_usage(deep=True).sum() / 1024**2
             ]
         })

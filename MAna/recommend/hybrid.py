@@ -57,7 +57,7 @@ def weighted_score_fusion(
             )
         else:
             order = np.argsort(-values, kind="mergesort")
-            ranks = np.empty(len(values), dtype=float)
+            ranks: np.ndarray = np.empty(len(values), dtype=float)
             ranks[order] = np.arange(1, len(values) + 1)
             normalized = 1.0 / ranks
         active_weight += weight

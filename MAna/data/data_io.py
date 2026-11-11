@@ -14,12 +14,7 @@ def read_data(file_path, **kwargs)-> pd.DataFrame:
     Returns:
     pandas.DataFrame: The data read from the file.
     """
-    import pandas as pd
-    import pyperclip
-    import pyarrow.parquet as pq
-    import pickle
-    import sas7bdat
-    import pyreadstat
+    file_path = str(file_path)
 
     # Determine file type based on file extension
     file_extension = file_path.split('.')[-1]
@@ -36,23 +31,34 @@ def read_data(file_path, **kwargs)-> pd.DataFrame:
         # Read text file (assumes tab-separated values)
         df = pd.read_csv(file_path, delimiter='\t')
     elif file_path == 'clipboard':
+        import io
+        import pyperclip
+
         # Get clipboard contents
         clipboard_data = pyperclip.paste()
 
         # Read clipboard contents as CSV
-        df = pd.read_csv(pd.compat.StringIO(clipboard_data), delimiter='\t')
+        df = pd.read_csv(io.StringIO(clipboard_data), delimiter='\t')
     elif file_extension == 'sas':
+        import sas7bdat
+
         # Read SAS file
         with open(file_path, 'rb') as f:
             df = sas7bdat.SAS7BDAT(f).to_data_frame()
     elif file_extension == 'spss':
+        import pyreadstat
+
         # Read SPSS file
         df, meta = pyreadstat.read_sav(file_path, **kwargs)
     elif file_extension == 'parquet':
+        import pyarrow.parquet as pq
+
         # Read Parquet file
         pq_file = pq.ParquetFile(file_path)
         df = pq_file.read().to_pandas()
     elif file_extension == 'pickle':
+        import pickle
+
         # Read Pickle file
         with open(file_path, 'rb') as f:
             df = pickle.load(f)
@@ -118,15 +124,17 @@ def read_from_database(database_url, query) -> pd.DataFrame:
     Returns:
     pandas.DataFrame: The data read from the database.
     """
-    import pandas as pd
     import sqlalchemy as db
 
     engine = db.create_engine(database_url)
-    connection = engine.connect()
-    result = connection.execute(query)
-    data = result.fetchall()
-    connection.close()
-    df = pd.DataFrame(data, columns=result.keys())
+    try:
+        with engine.connect() as connection:
+            df = pd.read_sql_query(
+                db.text(query) if isinstance(query, str) else query,
+                connection,
+            )
+    finally:
+        engine.dispose()
     return df
 
 

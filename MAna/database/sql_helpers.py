@@ -653,7 +653,7 @@ def optimize_datatypes(
         # Convert low-cardinality strings to category. Object columns may also
         # contain unhashable values such as PostgreSQL JSON lists/dicts, which
         # cannot be passed to Series.nunique() or converted to categories.
-        elif col_type == 'object':
+        elif col_type == 'object' or pd.api.types.is_string_dtype(col_type):
             series = df_optimized[col]
             non_null = series.dropna()
             if non_null.empty or not non_null.map(

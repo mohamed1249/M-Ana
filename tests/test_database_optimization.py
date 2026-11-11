@@ -29,6 +29,21 @@ class DatabaseDatatypeOptimizationTests(unittest.TestCase):
 
         self.assertEqual(str(optimized["status"].dtype), "category")
 
+    def test_nullable_string_dtype_becomes_category_without_mutating_input(self):
+        from MAna.database import optimize_datatypes
+
+        frame = pd.DataFrame({"status": pd.Series(
+            ["paid", "paid", "paid", "shipped", "shipped", None],
+            dtype="string",
+        )})
+        original = frame.copy(deep=True)
+
+        optimized = optimize_datatypes(frame)
+
+        self.assertEqual(str(optimized["status"].dtype), "category")
+        self.assertTrue(pd.isna(optimized["status"].iloc[-1]))
+        pd.testing.assert_frame_equal(frame, original)
+
 
 if __name__ == "__main__":
     unittest.main()
